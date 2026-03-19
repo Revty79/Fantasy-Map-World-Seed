@@ -1,8 +1,12 @@
-# World Seed Mapper (Phase 1)
+# World Seed Mapper (Phase 01 Baseline + Phase 01A)
 
 World Seed Mapper is a desktop-first fantasy cartography editor focused on very large, globe-safe maps and hand-authored worldbuilding workflows.
 
-Phase 1 delivers a usable core world drafting milestone with:
+Current delivery status:
+- Phase 01 is complete as a drafting/editor baseline.
+- Phase 01A is in progress to retrofit a terrain-first foundation into that baseline (not a scratch rebuild).
+
+Phase 01 baseline delivers:
 - world canvas navigation for large maps
 - typed layer workflows
 - vector, paint/mask, symbol, and label authoring
@@ -87,13 +91,15 @@ src-tauri/
   src/main.rs           Tauri app entry
 Prompts/
   phase_01_core_world_drafting/STATUS.md   Prompt queue and run log record
+  phase_01a_terrain_foundation_repair/STATUS.md
 docs/
   ARCHITECTURE.md
+  PHASE1A_REPAIR_CONTRACT.md
   PHASE1_CAPABILITIES_AND_LIMITATIONS.md
   PHASE2_HANDOFF.md
 ```
 
-## Phase 1 Scope
+## Phase 01 Baseline Scope
 
 Included in Phase 1:
 - create/open/save project workflows
@@ -107,8 +113,8 @@ Included in Phase 1:
 - export pipeline (PNG, SVG, JSON)
 - read-only globe preview sourced from the root world map
 
-Intentionally deferred to Phase 2:
-- advanced terrain/elevation authoring
+Deferred beyond the Phase 01 baseline:
+- terrain-first elevation foundation retrofit (active in Phase 01A queue)
 - climate/erosion simulation
 - direct globe editing
 - collaborative/multiplayer workflows
@@ -118,6 +124,7 @@ Intentionally deferred to Phase 2:
 ## Documentation Index
 
 - Architecture notes: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- Phase 01A terrain retrofit contract: [docs/PHASE1A_REPAIR_CONTRACT.md](docs/PHASE1A_REPAIR_CONTRACT.md)
 - Phase 1 capabilities and limitations: [docs/PHASE1_CAPABILITIES_AND_LIMITATIONS.md](docs/PHASE1_CAPABILITIES_AND_LIMITATIONS.md)
 - Phase 2 handoff summary: [docs/PHASE2_HANDOFF.md](docs/PHASE2_HANDOFF.md)
 
