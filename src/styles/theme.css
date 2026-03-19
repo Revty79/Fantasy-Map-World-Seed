@@ -1,0 +1,26 @@
+:root {
+  --font-ui: "Segoe UI", "Inter", sans-serif;
+
+  --color-bg-app: #0f141f;
+  --color-surface-1: #151d2b;
+  --color-surface-2: #1c2536;
+  --color-surface-3: #2c3950;
+
+  --color-text-primary: #e8edf8;
+  --color-text-secondary: #a9b7d1;
+
+  --color-border-muted: #2c3b54;
+  --color-border-strong: #4e668d;
+  --color-accent: #7aa6ff;
+  --color-focus: #8ab4ff;
+
+  --space-1: 0.3rem;
+  --space-2: 0.55rem;
+  --space-3: 0.9rem;
+  --space-4: 1.2rem;
+
+  --topbar-height: 64px;
+  --statusbar-height: 34px;
+  --tool-rail-width: 108px;
+  --sidebar-width: 328px;
+}
