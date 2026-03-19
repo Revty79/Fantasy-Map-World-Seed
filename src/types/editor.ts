@@ -8,6 +8,7 @@ export type { MapScope } from "./maps";
 export type EditorToolId =
   | "select"
   | "pan"
+  | "terrain"
   | "coastline"
   | "river"
   | "border"
@@ -69,6 +70,16 @@ export interface ActiveBrushSettings {
   category: string;
   value: number;
   color: string;
+}
+
+export type TerrainSculptTool = "raise" | "lower" | "smooth" | "flatten";
+
+export interface ActiveTerrainBrushSettings {
+  tool: TerrainSculptTool;
+  size: number;
+  strength: number;
+  hardness: number;
+  flattenTarget: number;
 }
 
 export interface ActiveVectorSettings {
@@ -145,6 +156,7 @@ export interface EditorSessionState {
   inProgressExtent: InProgressExtentState | null;
   activeExtent: ActiveExtentSettings;
   activeBrush: ActiveBrushSettings;
+  activeTerrainBrush: ActiveTerrainBrushSettings;
   activeVector: ActiveVectorSettings;
   activeSymbol: ActiveSymbolSettings;
   activeLabel: ActiveLabelSettings;

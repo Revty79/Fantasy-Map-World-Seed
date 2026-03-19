@@ -25,6 +25,15 @@ interface PaintSummary {
   cellSize: number;
 }
 
+interface TerrainStorageSummary {
+  chunkCount: number;
+  sampleResolution: number;
+  chunkSize: number;
+  width: number;
+  height: number;
+  sampleCount: number;
+}
+
 const summarizePaintLikeLayer = (layer: PaintLayerDocument | DataOverlayLayerDocument): PaintSummary => {
   const categoryCounts: Record<string, number> = {};
   let paintedCellCount = 0;
@@ -62,6 +71,21 @@ const findParentLinkForMap = (
   return (
     Object.values(parentMap.nestedLinks).find((link) => link.childMapId === map.id) ?? null
   );
+};
+
+const summarizeTerrainStorage = (map: MapDocument): TerrainStorageSummary => {
+  const sampleResolution = Math.max(1, Math.round(map.terrain.storage.sampleResolution));
+  const widthSamples = Math.max(1, Math.ceil(map.terrain.width / sampleResolution));
+  const heightSamples = Math.max(1, Math.ceil(map.terrain.height / sampleResolution));
+
+  return {
+    chunkCount: Object.keys(map.terrain.storage.chunks).length,
+    sampleResolution,
+    chunkSize: map.terrain.storage.chunkSize,
+    width: map.terrain.width,
+    height: map.terrain.height,
+    sampleCount: widthSamples * heightSamples,
+  };
 };
 
 export const buildMapJsonExport = (input: JsonExportInput) => {
@@ -195,6 +219,8 @@ export const buildMapJsonExport = (input: JsonExportInput) => {
       parentLink,
       childLinks,
       layerOrder: input.map.layerOrder,
+      terrain: input.map.terrain,
+      terrainSummary: summarizeTerrainStorage(input.map),
     },
     layers,
     summary: {
@@ -206,4 +232,3 @@ export const buildMapJsonExport = (input: JsonExportInput) => {
     },
   };
 };
-

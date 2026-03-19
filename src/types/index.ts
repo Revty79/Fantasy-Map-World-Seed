@@ -5,3 +5,4 @@ export * from "./entities";
 export * from "./layers";
 export * from "./maps";
 export * from "./project";
+export * from "./terrain";

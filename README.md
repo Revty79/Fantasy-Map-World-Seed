@@ -1,10 +1,10 @@
-# World Seed Mapper (Phase 01 Baseline + Phase 01A)
+# World Seed Mapper (Phase 01 + Phase 01A Complete)
 
 World Seed Mapper is a desktop-first fantasy cartography editor focused on very large, globe-safe maps and hand-authored worldbuilding workflows.
 
 Current delivery status:
 - Phase 01 is complete as a drafting/editor baseline.
-- Phase 01A is in progress to retrofit a terrain-first foundation into that baseline (not a scratch rebuild).
+- Phase 01A is complete and retrofits a terrain-first foundation into that baseline (not a scratch rebuild).
 
 Phase 01 baseline delivers:
 - world canvas navigation for large maps
@@ -14,6 +14,15 @@ Phase 01 baseline delivers:
 - folder-based project persistence
 - PNG/SVG/JSON export
 - Three.js globe preview from the root world map
+
+Phase 01A terrain foundation delivers:
+- first-class terrain/elevation schema per map
+- deterministic seeded terrain generation
+- terrain-aware flat rendering modes (hypsometric, grayscale, shaded relief, land/water, contour preview)
+- direct terrain sculpt tools (raise/lower/smooth/flatten)
+- derived terrain workflows (land/water interpretation and derived coastline overlay)
+- terrain-aware PNG/export raster path and terrain-aware globe texture pipeline
+- backward-compatible hydration for projects missing terrain fields
 
 ## Tech Stack
 
@@ -94,6 +103,7 @@ Prompts/
   phase_01a_terrain_foundation_repair/STATUS.md
 docs/
   ARCHITECTURE.md
+  PHASE1A_COMPLETION_SUMMARY.md
   PHASE1A_REPAIR_CONTRACT.md
   PHASE1_CAPABILITIES_AND_LIMITATIONS.md
   PHASE2_HANDOFF.md
@@ -114,9 +124,10 @@ Included in Phase 1:
 - read-only globe preview sourced from the root world map
 
 Deferred beyond the Phase 01 baseline:
-- terrain-first elevation foundation retrofit (active in Phase 01A queue)
-- climate/erosion simulation
-- direct globe editing
+- advanced erosion/climate simulation and biome systems
+- direct globe editing workflows
+- true 3D terrain/displacement scene authoring
+- alternate planetary/world-model abstractions (rings, multi-body maps, hollow-earth variants, and other exotic world models)
 - collaborative/multiplayer workflows
 - advanced asset import/management UI
 - deeper layer hierarchy tooling (full drag-drop tree management)
@@ -125,6 +136,7 @@ Deferred beyond the Phase 01 baseline:
 
 - Architecture notes: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - Phase 01A terrain retrofit contract: [docs/PHASE1A_REPAIR_CONTRACT.md](docs/PHASE1A_REPAIR_CONTRACT.md)
+- Phase 01A completion summary: [docs/PHASE1A_COMPLETION_SUMMARY.md](docs/PHASE1A_COMPLETION_SUMMARY.md)
 - Phase 1 capabilities and limitations: [docs/PHASE1_CAPABILITIES_AND_LIMITATIONS.md](docs/PHASE1_CAPABILITIES_AND_LIMITATIONS.md)
 - Phase 2 handoff summary: [docs/PHASE2_HANDOFF.md](docs/PHASE2_HANDOFF.md)
 

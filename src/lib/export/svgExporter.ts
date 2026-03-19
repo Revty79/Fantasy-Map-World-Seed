@@ -193,6 +193,8 @@ export const exportMapToSvg = (input: SvgExportInput): SvgExportResult => {
   const size = toSvgWidthHeight(extent, input.scaleMultiplier);
   const omittedKinds = new Set<string>();
   const body: string[] = [];
+  const hasTerrainData = Object.keys(input.map.terrain.storage.chunks).length > 0;
+  const warnings: string[] = [];
 
   if (!input.transparentBackground) {
     body.push(
@@ -219,9 +221,29 @@ export const exportMapToSvg = (input: SvgExportInput): SvgExportResult => {
   }
 
   const omitted = Array.from(omittedKinds);
-  const limitations = omitted.length > 0
-    ? `SVG omitted layer kinds in this export: ${omitted.join(", ")}.`
-    : "SVG includes visible vector, symbol, and label layers.";
+
+  if (hasTerrainData) {
+    warnings.push(
+      "SVG does not embed terrain raster, derived coastline overlays, or land/water terrain shading; use PNG for visual terrain output.",
+    );
+  }
+
+  if (omitted.length > 0) {
+    warnings.push(`SVG omitted unsupported layer kinds: ${omitted.join(", ")}.`);
+  }
+
+  const limitationNotes: string[] = [];
+  if (hasTerrainData) {
+    limitationNotes.push("Terrain visuals are omitted from SVG output.");
+  }
+  if (omitted.length > 0) {
+    limitationNotes.push(`Layer kinds omitted: ${omitted.join(", ")}.`);
+  }
+
+  const limitations =
+    limitationNotes.length > 0
+      ? limitationNotes.join(" ")
+      : "SVG includes visible vector, symbol, and label layers.";
 
   const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${size.width}" height="${size.height}" viewBox="${formatNumber(
@@ -236,9 +258,6 @@ export const exportMapToSvg = (input: SvgExportInput): SvgExportResult => {
   return {
     svg,
     omittedLayerKinds: omitted,
-    warnings: omitted.length > 0
-      ? [`SVG omitted unsupported layer kinds: ${omitted.join(", ")}.`]
-      : [],
+    warnings,
   };
 };
-

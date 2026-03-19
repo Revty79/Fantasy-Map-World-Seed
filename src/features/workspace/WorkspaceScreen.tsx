@@ -104,10 +104,18 @@ export function WorkspaceScreen() {
   const setCanvasStatus = useEditorStore((state) => state.setCanvasStatus);
 
   const setBrushSetting = useEditorStore((state) => state.setBrushSetting);
+  const setTerrainBrushSetting = useEditorStore((state) => state.setTerrainBrushSetting);
   const setVectorSetting = useEditorStore((state) => state.setVectorSetting);
   const setSymbolSetting = useEditorStore((state) => state.setSymbolSetting);
   const setLabelSetting = useEditorStore((state) => state.setLabelSetting);
   const setExtentSetting = useEditorStore((state) => state.setExtentSetting);
+  const setTerrainGenerationSetting = useEditorStore((state) => state.setTerrainGenerationSetting);
+  const setTerrainDisplaySetting = useEditorStore((state) => state.setTerrainDisplaySetting);
+  const setTerrainSeaLevel = useEditorStore((state) => state.setTerrainSeaLevel);
+  const generateTerrainForActiveMap = useEditorStore((state) => state.generateTerrainForActiveMap);
+  const regenerateTerrainForActiveMap = useEditorStore((state) => state.regenerateTerrainForActiveMap);
+  const randomizeTerrainSeed = useEditorStore((state) => state.randomizeTerrainSeed);
+  const refreshTerrainDerivedForActiveMap = useEditorStore((state) => state.refreshTerrainDerivedForActiveMap);
   const updateSymbolTransform = useEditorStore((state) => state.updateSymbolTransform);
   const updateLabel = useEditorStore((state) => state.updateLabel);
   const [workspaceMode, setWorkspaceMode] = useState<"flat" | "globe">("flat");
@@ -155,6 +163,7 @@ export function WorkspaceScreen() {
       inProgressDraw: session.inProgressDraw,
       inProgressExtent: session.inProgressExtent,
       brush: session.activeBrush,
+      terrainBrush: session.activeTerrainBrush,
       view: activeView,
     }),
     [
@@ -166,6 +175,7 @@ export function WorkspaceScreen() {
       session.inProgressDraw,
       session.inProgressExtent,
       session.activeBrush,
+      session.activeTerrainBrush,
       activeView,
     ]
   );
@@ -312,7 +322,17 @@ export function WorkspaceScreen() {
       ].join(":")
     : "none";
 
-  const globeContextKey = `${rootWorldMap.id}:${activeMap.id}:${activeMapWorldExtentKey}`;
+  const globeContextKey = [
+    rootWorldMap.id,
+    activeMap.id,
+    activeMapWorldExtentKey,
+    document.metadata.updatedAt,
+    rootWorldMap.terrain.meta.updatedAt,
+    rootWorldMap.terrain.generation.revision,
+    rootWorldMap.terrain.display.renderMode,
+    rootWorldMap.terrain.display.showDerivedCoastline ? "derived-coast-on" : "derived-coast-off",
+    rootWorldMap.terrain.display.showLandWaterOverlay ? "land-water-overlay-on" : "land-water-overlay-off",
+  ].join(":");
 
   const refreshGlobePreview = useCallback(async () => {
     if (rootWorldMap.scope !== "world") {
@@ -710,10 +730,18 @@ export function WorkspaceScreen() {
             toggleLayerLock(session.selectedLayerId);
           }}
           onBrushChange={setBrushSetting}
+          onTerrainBrushChange={setTerrainBrushSetting}
           onVectorChange={setVectorSetting}
           onSymbolChange={setSymbolSetting}
           onLabelChange={setLabelSetting}
           onExtentChange={setExtentSetting}
+          onTerrainGenerationSettingChange={setTerrainGenerationSetting}
+          onTerrainDisplaySettingChange={setTerrainDisplaySetting}
+          onTerrainSeaLevelChange={setTerrainSeaLevel}
+          onGenerateTerrain={generateTerrainForActiveMap}
+          onRegenerateTerrain={regenerateTerrainForActiveMap}
+          onRandomizeTerrainSeed={randomizeTerrainSeed}
+          onRefreshTerrainDerived={refreshTerrainDerivedForActiveMap}
           onCommitExtent={commitExtentSelection}
           onCancelExtent={cancelExtentSelection}
           onSymbolTransformChange={(scale, rotationDegrees) => {

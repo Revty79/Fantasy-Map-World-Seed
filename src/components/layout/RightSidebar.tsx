@@ -14,6 +14,7 @@ import type {
   SelectionTarget,
   SidebarPanelId,
   SymbolInstance,
+  TerrainGenerationSettings,
   VectorFeature,
 } from "../../types";
 
@@ -77,6 +78,10 @@ interface RightSidebarProps {
     key: K,
     value: EditorSessionState["activeBrush"][K],
   ) => void;
+  onTerrainBrushChange: <K extends keyof EditorSessionState["activeTerrainBrush"]>(
+    key: K,
+    value: EditorSessionState["activeTerrainBrush"][K],
+  ) => void;
   onVectorChange: <K extends keyof EditorSessionState["activeVector"]>(
     key: K,
     value: EditorSessionState["activeVector"][K],
@@ -93,6 +98,19 @@ interface RightSidebarProps {
     key: K,
     value: EditorSessionState["activeExtent"][K],
   ) => void;
+  onTerrainGenerationSettingChange: <K extends keyof TerrainGenerationSettings>(
+    key: K,
+    value: TerrainGenerationSettings[K],
+  ) => void;
+  onTerrainDisplaySettingChange: <K extends keyof MapDocument["terrain"]["display"]>(
+    key: K,
+    value: MapDocument["terrain"]["display"][K],
+  ) => void;
+  onTerrainSeaLevelChange: (seaLevel: number) => void;
+  onGenerateTerrain: () => void;
+  onRegenerateTerrain: () => void;
+  onRandomizeTerrainSeed: () => void;
+  onRefreshTerrainDerived: () => void;
   onCommitExtent: () => void;
   onCancelExtent: () => void;
   onSymbolTransformChange: (scale: number, rotationDegrees: number) => void;
@@ -135,10 +153,18 @@ export function RightSidebar({
   onInspectorToggleVisibility,
   onInspectorToggleLock,
   onBrushChange,
+  onTerrainBrushChange,
   onVectorChange,
   onSymbolChange,
   onLabelChange,
   onExtentChange,
+  onTerrainGenerationSettingChange,
+  onTerrainDisplaySettingChange,
+  onTerrainSeaLevelChange,
+  onGenerateTerrain,
+  onRegenerateTerrain,
+  onRandomizeTerrainSeed,
+  onRefreshTerrainDerived,
   onCommitExtent,
   onCancelExtent,
   onSymbolTransformChange,
@@ -235,20 +261,30 @@ export function RightSidebar({
           <ToolSettingsPanel
             activeTool={session.activeTool}
             brush={session.activeBrush}
+            terrainBrush={session.activeTerrainBrush}
             vector={session.activeVector}
             symbol={session.activeSymbol}
             label={session.activeLabel}
             extent={session.activeExtent}
+            terrain={activeMap.terrain}
             activeMapScope={activeMap.scope}
             hasInProgressExtent={Boolean(session.inProgressExtent)}
             canCreateRegion={canCreateRegion}
             canCreateLocal={canCreateLocal}
             selectedLayer={selectedLayer}
             onBrushChange={onBrushChange}
+            onTerrainBrushChange={onTerrainBrushChange}
             onVectorChange={onVectorChange}
             onSymbolChange={onSymbolChange}
             onLabelChange={onLabelChange}
             onExtentChange={onExtentChange}
+            onTerrainGenerationSettingChange={onTerrainGenerationSettingChange}
+            onTerrainDisplaySettingChange={onTerrainDisplaySettingChange}
+            onTerrainSeaLevelChange={onTerrainSeaLevelChange}
+            onGenerateTerrain={onGenerateTerrain}
+            onRegenerateTerrain={onRegenerateTerrain}
+            onRandomizeTerrainSeed={onRandomizeTerrainSeed}
+            onRefreshTerrainDerived={onRefreshTerrainDerived}
             onCommitExtent={onCommitExtent}
             onCancelExtent={onCancelExtent}
           />

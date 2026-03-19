@@ -15,6 +15,7 @@ interface ToolRailProps {
 const TOOL_DEFINITIONS: ToolDefinition[] = [
   { id: "select", label: "Select", hint: "Selection and editing" },
   { id: "pan", label: "Pan", hint: "Move camera" },
+  { id: "terrain", label: "Terrain", hint: "Sculpt elevation" },
   { id: "coastline", label: "Coast", hint: "Land boundaries" },
   { id: "river", label: "River", hint: "River lines" },
   { id: "border", label: "Border", hint: "Political borders" },

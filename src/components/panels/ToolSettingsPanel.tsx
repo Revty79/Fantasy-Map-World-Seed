@@ -1,14 +1,23 @@
-import type { EditorSessionState, EditorToolId, MapLayerDocument, MapScope } from "../../types";
+import type {
+  EditorSessionState,
+  EditorToolId,
+  MapLayerDocument,
+  MapScope,
+  MapTerrainDocument,
+  TerrainGenerationSettings,
+} from "../../types";
 import { STARTER_SYMBOLS } from "../../lib/assets/starterSymbols";
 import { formatToolShortcut } from "../../features/shortcuts/shortcuts";
 
 interface ToolSettingsPanelProps {
   activeTool: EditorToolId;
   brush: EditorSessionState["activeBrush"];
+  terrainBrush: EditorSessionState["activeTerrainBrush"];
   vector: EditorSessionState["activeVector"];
   symbol: EditorSessionState["activeSymbol"];
   label: EditorSessionState["activeLabel"];
   extent: EditorSessionState["activeExtent"];
+  terrain: MapTerrainDocument;
   activeMapScope: MapScope;
   hasInProgressExtent: boolean;
   canCreateRegion: boolean;
@@ -17,6 +26,10 @@ interface ToolSettingsPanelProps {
   onBrushChange: <K extends keyof EditorSessionState["activeBrush"]>(
     key: K,
     value: EditorSessionState["activeBrush"][K],
+  ) => void;
+  onTerrainBrushChange: <K extends keyof EditorSessionState["activeTerrainBrush"]>(
+    key: K,
+    value: EditorSessionState["activeTerrainBrush"][K],
   ) => void;
   onVectorChange: <K extends keyof EditorSessionState["activeVector"]>(
     key: K,
@@ -34,15 +47,36 @@ interface ToolSettingsPanelProps {
     key: K,
     value: EditorSessionState["activeExtent"][K],
   ) => void;
+  onTerrainGenerationSettingChange: <K extends keyof TerrainGenerationSettings>(
+    key: K,
+    value: TerrainGenerationSettings[K],
+  ) => void;
+  onTerrainDisplaySettingChange: <K extends keyof MapTerrainDocument["display"]>(
+    key: K,
+    value: MapTerrainDocument["display"][K],
+  ) => void;
+  onTerrainSeaLevelChange: (seaLevel: number) => void;
+  onGenerateTerrain: () => void;
+  onRegenerateTerrain: () => void;
+  onRandomizeTerrainSeed: () => void;
+  onRefreshTerrainDerived: () => void;
   onCommitExtent: () => void;
   onCancelExtent: () => void;
 }
 
 const VECTOR_TOOLS = new Set<EditorToolId>(["coastline", "river", "border", "road"]);
 const PAINT_TOOLS = new Set<EditorToolId>(["paint", "erase"]);
+const TERRAIN_SCULPT_TOOLS = new Set<EditorSessionState["activeTerrainBrush"]["tool"]>([
+  "raise",
+  "lower",
+  "smooth",
+  "flatten",
+]);
 
 const getToolDisplayName = (tool: EditorToolId): string => {
   switch (tool) {
+    case "terrain":
+      return "Terrain Sculpt";
     case "coastline":
       return "Coastline";
     case "river":
@@ -57,6 +91,14 @@ const getToolDisplayName = (tool: EditorToolId): string => {
 };
 
 const getLayerCompatibility = (tool: EditorToolId, selectedLayer: MapLayerDocument | null) => {
+  if (tool === "terrain") {
+    return {
+      summary: "Terrain source",
+      warning: null as string | null,
+      isCompatible: true,
+    };
+  }
+
   if (!selectedLayer) {
     return {
       summary: "No layer selected",
@@ -123,20 +165,30 @@ const getLayerCompatibility = (tool: EditorToolId, selectedLayer: MapLayerDocume
 export function ToolSettingsPanel({
   activeTool,
   brush,
+  terrainBrush,
   vector,
   symbol,
   label,
   extent,
+  terrain,
   activeMapScope,
   hasInProgressExtent,
   canCreateRegion,
   canCreateLocal,
   selectedLayer,
   onBrushChange,
+  onTerrainBrushChange,
   onVectorChange,
   onSymbolChange,
   onLabelChange,
   onExtentChange,
+  onTerrainGenerationSettingChange,
+  onTerrainDisplaySettingChange,
+  onTerrainSeaLevelChange,
+  onGenerateTerrain,
+  onRegenerateTerrain,
+  onRandomizeTerrainSeed,
+  onRefreshTerrainDerived,
   onCommitExtent,
   onCancelExtent,
 }: ToolSettingsPanelProps) {
@@ -144,7 +196,9 @@ export function ToolSettingsPanel({
   const toolShortcut = formatToolShortcut(activeTool);
   const layerCompatibility = getLayerCompatibility(activeTool, selectedLayer);
   const noExtentTargets = !canCreateRegion && !canCreateLocal;
-  const showLayerCompatibility = activeTool !== "select" && activeTool !== "pan" && activeTool !== "extent";
+  const showLayerCompatibility =
+    activeTool !== "select" && activeTool !== "pan" && activeTool !== "extent" && activeTool !== "terrain";
+  const terrainSettings = terrain.generation.settings;
 
   return (
     <div className="tool-settings-panel">
@@ -247,6 +301,82 @@ export function ToolSettingsPanel({
             </div>
           </section>
         </>
+      ) : null}
+
+      {activeTool === "terrain" ? (
+        <section className="field-group">
+          <h3>Terrain sculpt</h3>
+          <div className="field-grid">
+            <label>
+              Operation
+              <select
+                value={terrainBrush.tool}
+                onChange={(event) => {
+                  const value = event.target.value as EditorSessionState["activeTerrainBrush"]["tool"];
+                  if (TERRAIN_SCULPT_TOOLS.has(value)) {
+                    onTerrainBrushChange("tool", value);
+                  }
+                }}
+              >
+                <option value="raise">Raise</option>
+                <option value="lower">Lower</option>
+                <option value="smooth">Smooth</option>
+                <option value="flatten">Flatten / Level</option>
+              </select>
+            </label>
+            <label>
+              Size
+              <input
+                type="number"
+                min={1}
+                max={4096}
+                step={1}
+                value={terrainBrush.size}
+                onChange={(event) => onTerrainBrushChange("size", Number(event.target.value))}
+              />
+            </label>
+            <label>
+              Strength
+              <input
+                type="range"
+                min={0.01}
+                max={1}
+                step={0.01}
+                value={terrainBrush.strength}
+                onChange={(event) => onTerrainBrushChange("strength", Number(event.target.value))}
+              />
+            </label>
+            <label>
+              Hardness
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.01}
+                value={terrainBrush.hardness}
+                onChange={(event) => onTerrainBrushChange("hardness", Number(event.target.value))}
+              />
+            </label>
+            <label>
+              Flatten target
+              <input
+                type="number"
+                min={-1}
+                max={1}
+                step={0.01}
+                value={terrainBrush.flattenTarget}
+                onChange={(event) => onTerrainBrushChange("flattenTarget", Number(event.target.value))}
+              />
+            </label>
+          </div>
+          {terrainBrush.tool === "flatten" ? (
+            <p className="empty-copy">Flatten blends terrain toward the target elevation inside the brush radius.</p>
+          ) : terrainBrush.tool === "smooth" ? (
+            <p className="empty-copy">Smooth averages local elevations while preserving macro form with strength and falloff.</p>
+          ) : (
+            <p className="empty-copy">Drag on the map to sculpt elevation directly. Undo/redo works per stroke.</p>
+          )}
+        </section>
       ) : null}
 
       {VECTOR_TOOLS.has(activeTool) ? (
@@ -529,7 +659,264 @@ export function ToolSettingsPanel({
         </section>
       ) : null}
 
-      {!PAINT_TOOLS.has(activeTool) && !VECTOR_TOOLS.has(activeTool) && activeTool !== "symbol" && activeTool !== "label" && activeTool !== "extent" ? (
+      <section className="field-group">
+        <h3>Terrain generation</h3>
+        <div className="field-grid">
+          <label>
+            Seed
+            <input
+              type="number"
+              step={1}
+              value={terrainSettings.seed}
+              onChange={(event) => onTerrainGenerationSettingChange("seed", Number(event.target.value))}
+            />
+          </label>
+          <label>
+            Generator
+            <select
+              value={terrainSettings.generator}
+              onChange={(event) =>
+                onTerrainGenerationSettingChange(
+                  "generator",
+                  event.target.value as TerrainGenerationSettings["generator"],
+                )
+              }
+            >
+              <option value="fbm-simplex">FBM (simplex-like)</option>
+              <option value="fbm-perlin">FBM (perlin-like)</option>
+              <option value="ridged-multifractal">Ridged multifractal</option>
+              <option value="none">Macro-only</option>
+              <option value="custom">Custom</option>
+            </select>
+          </label>
+          <label>
+            Sea level
+            <input
+              type="number"
+              min={-1}
+              max={1}
+              step={0.01}
+              value={terrain.seaLevel}
+              onChange={(event) => onTerrainSeaLevelChange(Number(event.target.value))}
+            />
+          </label>
+          <label>
+            Frequency
+            <input
+              type="number"
+              min={0.0001}
+              max={100}
+              step={0.01}
+              value={terrainSettings.frequency}
+              onChange={(event) => onTerrainGenerationSettingChange("frequency", Number(event.target.value))}
+            />
+          </label>
+          <label>
+            Octaves
+            <input
+              type="number"
+              min={1}
+              max={12}
+              step={1}
+              value={terrainSettings.octaves}
+              onChange={(event) => onTerrainGenerationSettingChange("octaves", Number(event.target.value))}
+            />
+          </label>
+          <label>
+            Lacunarity
+            <input
+              type="number"
+              min={0.1}
+              max={10}
+              step={0.05}
+              value={terrainSettings.lacunarity}
+              onChange={(event) => onTerrainGenerationSettingChange("lacunarity", Number(event.target.value))}
+            />
+          </label>
+          <label>
+            Persistence
+            <input
+              type="number"
+              min={0}
+              max={1}
+              step={0.01}
+              value={terrainSettings.persistence}
+              onChange={(event) => onTerrainGenerationSettingChange("persistence", Number(event.target.value))}
+            />
+          </label>
+          <label>
+            Amplitude
+            <input
+              type="number"
+              min={0}
+              max={4}
+              step={0.05}
+              value={terrainSettings.amplitude}
+              onChange={(event) => onTerrainGenerationSettingChange("amplitude", Number(event.target.value))}
+            />
+          </label>
+          <label>
+            Warp strength
+            <input
+              type="number"
+              min={0}
+              max={10}
+              step={0.05}
+              value={terrainSettings.warp}
+              onChange={(event) => onTerrainGenerationSettingChange("warp", Number(event.target.value))}
+            />
+          </label>
+          <label>
+            Continent freq
+            <input
+              type="number"
+              min={0.01}
+              max={10}
+              step={0.01}
+              value={terrainSettings.continentFrequency}
+              onChange={(event) => onTerrainGenerationSettingChange("continentFrequency", Number(event.target.value))}
+            />
+          </label>
+          <label>
+            Continent strength
+            <input
+              type="number"
+              min={0}
+              max={1}
+              step={0.01}
+              value={terrainSettings.continentStrength}
+              onChange={(event) => onTerrainGenerationSettingChange("continentStrength", Number(event.target.value))}
+            />
+          </label>
+        </div>
+        <div className="field-grid">
+          <label>
+            Display mode
+            <select
+              value={terrain.display.renderMode}
+              onChange={(event) =>
+                onTerrainDisplaySettingChange(
+                  "renderMode",
+                  event.target.value as MapTerrainDocument["display"]["renderMode"],
+                )
+              }
+            >
+              <option value="hypsometric">Colored elevation</option>
+              <option value="grayscale">Grayscale height</option>
+              <option value="shaded-relief">Shaded relief</option>
+              <option value="land-water">Land / Water</option>
+              <option value="contour-preview">Contour preview</option>
+            </select>
+          </label>
+          <label>
+            Vertical exaggeration
+            <input
+              type="number"
+              min={0.1}
+              max={10}
+              step={0.1}
+              value={terrain.display.verticalExaggeration}
+              onChange={(event) => onTerrainDisplaySettingChange("verticalExaggeration", Number(event.target.value))}
+            />
+          </label>
+          <label>
+            Hillshade strength
+            <input
+              type="number"
+              min={0}
+              max={2}
+              step={0.05}
+              value={terrain.display.hillshadeStrength}
+              onChange={(event) => onTerrainDisplaySettingChange("hillshadeStrength", Number(event.target.value))}
+            />
+          </label>
+          <label>
+            Show contours
+            <select
+              value={terrain.display.showContours ? "yes" : "no"}
+              onChange={(event) => onTerrainDisplaySettingChange("showContours", event.target.value === "yes")}
+            >
+              <option value="no">No</option>
+              <option value="yes">Yes</option>
+            </select>
+          </label>
+          <label>
+            Contour interval
+            <input
+              type="number"
+              min={0.005}
+              max={1}
+              step={0.005}
+              value={terrain.display.contourInterval}
+              onChange={(event) => onTerrainDisplaySettingChange("contourInterval", Number(event.target.value))}
+            />
+          </label>
+          <label>
+            Derived coastline
+            <select
+              value={terrain.display.showDerivedCoastline ? "yes" : "no"}
+              onChange={(event) => onTerrainDisplaySettingChange("showDerivedCoastline", event.target.value === "yes")}
+            >
+              <option value="no">Hidden</option>
+              <option value="yes">Visible</option>
+            </select>
+          </label>
+          <label>
+            Land/water overlay
+            <select
+              value={terrain.display.showLandWaterOverlay ? "yes" : "no"}
+              onChange={(event) => onTerrainDisplaySettingChange("showLandWaterOverlay", event.target.value === "yes")}
+            >
+              <option value="no">Off</option>
+              <option value="yes">On</option>
+            </select>
+          </label>
+        </div>
+        <div className="panel-row">
+          <span>Generated</span>
+          <strong>{terrain.generation.hasGenerated ? "Yes" : "No"}</strong>
+        </div>
+        <div className="panel-row">
+          <span>Revision</span>
+          <strong>{terrain.generation.revision}</strong>
+        </div>
+        <div className="panel-row">
+          <span>Derived cache</span>
+          <strong>{terrain.derived.cachedAt ? "Ready" : "Not built"}</strong>
+        </div>
+        <div className="panel-row">
+          <span>Derived coastline</span>
+          <strong>{terrain.derived.coastlineSegmentCount}</strong>
+        </div>
+        <div className="panel-row">
+          <span>Land / Water samples</span>
+          <strong>{terrain.derived.landSampleCount} / {terrain.derived.waterSampleCount}</strong>
+        </div>
+        <p className="empty-copy">
+          Derived coastline is a non-destructive terrain overlay and does not overwrite authored coastline vectors.
+        </p>
+        <div className="panel-actions panel-actions--inspector">
+          <button type="button" className="button button--ghost" onClick={onRandomizeTerrainSeed}>
+            Randomize Seed
+          </button>
+          <button type="button" className="button button--primary" onClick={onGenerateTerrain}>
+            Generate New
+          </button>
+          <button type="button" className="button button--ghost" onClick={onRegenerateTerrain}>
+            Regenerate
+          </button>
+          <button type="button" className="button button--ghost" onClick={onRefreshTerrainDerived}>
+            Refresh Derived
+          </button>
+        </div>
+      </section>
+
+      {!PAINT_TOOLS.has(activeTool) &&
+      !VECTOR_TOOLS.has(activeTool) &&
+      activeTool !== "symbol" &&
+      activeTool !== "label" &&
+      activeTool !== "extent" &&
+      activeTool !== "terrain" ? (
         <section className="field-group">
           <h3>Tool overview</h3>
           <p className="empty-copy">Select a drawing tool to edit style presets and placement defaults. Use `?` for all shortcuts.</p>

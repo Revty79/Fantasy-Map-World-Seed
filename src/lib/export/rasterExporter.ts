@@ -10,6 +10,7 @@ import type {
 } from "../../types";
 import { computeExportSourceExtent, computeRasterOutputSize } from "./geometry";
 import type { ExportArea, ExportExtent } from "./types";
+import { buildTerrainPreviewCanvas } from "../terrain";
 
 const MASK_OCEAN_COLOR = "#4c78c6";
 const MASK_LAND_COLOR = "#73b486";
@@ -237,6 +238,19 @@ const drawLayer = (context: CanvasRenderingContext2D, layer: MapLayerDocument) =
   context.restore();
 };
 
+const drawTerrainBase = (context: CanvasRenderingContext2D, map: MapDocument) => {
+  if (Object.keys(map.terrain.storage.chunks).length <= 0) {
+    return;
+  }
+
+  const terrainCanvas = buildTerrainPreviewCanvas(map.terrain);
+  context.save();
+  context.globalAlpha = 0.96;
+  context.imageSmoothingEnabled = true;
+  context.drawImage(terrainCanvas, 0, 0, Math.max(1, map.dimensions.width), Math.max(1, map.dimensions.height));
+  context.restore();
+};
+
 interface RasterExportInput {
   map: MapDocument;
   layers: MapLayerDocument[];
@@ -288,6 +302,7 @@ export const renderMapToCanvas = (input: RasterCanvasRenderInput): HTMLCanvasEle
 
   context.save();
   applyWorldTransform(context, input.sourceExtent, canvas.width, canvas.height);
+  drawTerrainBase(context, input.map);
   for (const layer of input.layers) {
     drawLayer(context, layer);
   }

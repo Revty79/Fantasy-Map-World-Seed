@@ -6,6 +6,7 @@ import {
   DEFAULT_WORLD_WIDTH,
   PROJECT_SCHEMA_VERSION,
 } from "../constants/documentDefaults";
+import { createMapTerrainDocument } from "./terrainFactories";
 import { STARTER_SYMBOLS } from "../assets";
 import type {
   AssetReference,
@@ -207,6 +208,8 @@ export const createMapDocument = ({
   width = DEFAULT_WORLD_WIDTH,
   height = DEFAULT_WORLD_HEIGHT,
 }: CreateMapDocumentInput): MapDocument => {
+  const terrainTimestamp = nowIso();
+
   return {
     id: createDocumentId("map"),
     name,
@@ -225,6 +228,16 @@ export const createMapDocument = ({
     layerOrder: [],
     layers: {},
     nestedLinks: {},
+    terrain: createMapTerrainDocument(
+      {
+        width,
+        height,
+      },
+      {
+        chunkSize: DEFAULT_CHUNK_SIZE,
+        timestamp: terrainTimestamp,
+      },
+    ),
     settings: {
       backgroundColor: "#0f1829",
       gridEnabled: true,

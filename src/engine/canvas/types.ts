@@ -1,4 +1,5 @@
 import type {
+  ActiveTerrainBrushSettings,
   EditorToolId,
   InProgressDrawState,
   InProgressExtentState,
@@ -23,6 +24,7 @@ export interface CanvasRenderInput {
     value: number;
     color: string;
   };
+  terrainBrush: ActiveTerrainBrushSettings;
   view: {
     cameraX: number;
     cameraY: number;

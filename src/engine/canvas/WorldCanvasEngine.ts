@@ -4,12 +4,15 @@ import {
   FederatedPointerEvent,
   Graphics,
   Rectangle,
+  Sprite,
   Text,
   TextStyle,
+  Texture,
 } from "pixi.js";
 import { useEditorStore } from "../../store/editorStore";
 import type { DocumentPoint } from "../../types";
 import { hitTestVectorFeature, hitTestVertex } from "../../lib/geometry/vectorMath";
+import { buildTerrainPreviewCanvas } from "../../lib/terrain";
 import { getVisibleWorldRect, screenToWorld, zoomAtScreenPoint } from "../camera/cameraMath";
 import { getVisibleChunks } from "../spatial/chunkMath";
 import type { CanvasRenderInput, CanvasRuntimeCallbacks } from "./types";
@@ -85,6 +88,7 @@ export class WorldCanvasEngine {
   private readonly screenOverlayContainer = new Container();
 
   private readonly worldGraphics = new Graphics();
+  private readonly terrainSprite = new Sprite(Texture.EMPTY);
   private readonly gridGraphics = new Graphics();
   private readonly chunkGraphics = new Graphics();
   private readonly mapExtentGraphics = new Graphics();
@@ -103,6 +107,7 @@ export class WorldCanvasEngine {
   });
 
   private currentInput: CanvasRenderInput | null = null;
+  private terrainTextureCacheKey: string | null = null;
   private readonly layerContainers = new Map<string, Container>();
   private readonly vectorGraphicsByLayer = new Map<string, Graphics>();
   private readonly paintGraphicsByLayer = new Map<string, Graphics>();
@@ -119,6 +124,7 @@ export class WorldCanvasEngine {
   private draggedSymbol: DraggedSymbolState | null = null;
   private draggedLabel: DraggedLabelState | null = null;
   private paintActive = false;
+  private terrainBrushActive = false;
   private hoverWorldPoint: DocumentPoint | null = null;
 
   private resizeObserver: ResizeObserver | null = null;
@@ -149,6 +155,7 @@ export class WorldCanvasEngine {
     app.stage.hitArea = new Rectangle(0, 0, this.host.clientWidth, this.host.clientHeight);
 
     this.baseContainer.addChild(this.worldGraphics);
+    this.baseContainer.addChild(this.terrainSprite);
     this.gridContainer.addChild(this.gridGraphics);
     this.chunkOverlayContainer.addChild(this.chunkGraphics);
     this.interactionOverlayContainer.addChild(this.mapExtentGraphics);
@@ -207,6 +214,7 @@ export class WorldCanvasEngine {
 
     this.syncLayerContainers(input.layers);
     this.drawWorldBounds(input);
+    this.drawTerrainBase(input);
     this.drawPaintLayers(input, visibleChunks);
     this.drawVectorLayers(input);
     this.drawSymbolLayers(input);
@@ -243,6 +251,11 @@ export class WorldCanvasEngine {
     this.resizeObserver = null;
 
     this.app.destroy(true, { children: true });
+    if (this.terrainSprite.texture !== Texture.EMPTY) {
+      this.terrainSprite.texture.destroy(true);
+      this.terrainSprite.texture = Texture.EMPTY;
+    }
+    this.terrainTextureCacheKey = null;
     this.layerContainers.clear();
     this.vectorGraphicsByLayer.clear();
     this.paintGraphicsByLayer.clear();
@@ -254,6 +267,8 @@ export class WorldCanvasEngine {
 
   private readonly onPointerDown = (event: FederatedPointerEvent) => {
     this.pointerDown = true;
+    this.paintActive = false;
+    this.terrainBrushActive = false;
 
     if (!this.currentInput) {
       return;
@@ -306,6 +321,23 @@ export class WorldCanvasEngine {
       }
 
       useEditorStore.getState().applyBrushSample(worldPoint.x, worldPoint.y);
+      return;
+    }
+
+    if (this.currentInput.activeTool === "terrain") {
+      this.terrainBrushActive = true;
+      const terrainOperation = this.currentInput.terrainBrush.tool;
+      const historyLabel =
+        terrainOperation === "raise"
+          ? "Terrain raise stroke"
+          : terrainOperation === "lower"
+            ? "Terrain lower stroke"
+            : terrainOperation === "smooth"
+              ? "Terrain smooth stroke"
+              : "Terrain flatten stroke";
+
+      useEditorStore.getState().checkpointHistory(historyLabel);
+      useEditorStore.getState().applyTerrainBrushSample(worldPoint.x, worldPoint.y);
       return;
     }
 
@@ -374,6 +406,12 @@ export class WorldCanvasEngine {
       return;
     }
 
+    if (this.pointerDown && this.terrainBrushActive) {
+      useEditorStore.getState().applyTerrainBrushSample(worldPoint.x, worldPoint.y);
+      this.drawBrushCursor(this.currentInput);
+      return;
+    }
+
     if (this.pointerDown && this.currentInput.activeTool === "extent" && this.currentInput.inProgressExtent) {
       useEditorStore.getState().updateExtentSelection(worldPoint.x, worldPoint.y);
       this.drawDraftOverlay(this.currentInput);
@@ -404,6 +442,7 @@ export class WorldCanvasEngine {
   private readonly onPointerLeave = () => {
     this.hoverWorldPoint = null;
     this.paintActive = false;
+    this.terrainBrushActive = false;
     this.updateCursor(null);
     this.callbacks.onPointerMove(null, null);
   };
@@ -416,6 +455,7 @@ export class WorldCanvasEngine {
     this.draggedSymbol = null;
     this.draggedLabel = null;
     this.paintActive = false;
+    this.terrainBrushActive = false;
     this.updateCursor(this.hoverWorldPoint);
   };
 
@@ -606,6 +646,7 @@ export class WorldCanvasEngine {
       this.currentInput.activeTool === "river" ||
       this.currentInput.activeTool === "border" ||
       this.currentInput.activeTool === "road" ||
+      this.currentInput.activeTool === "terrain" ||
       this.currentInput.activeTool === "paint" ||
       this.currentInput.activeTool === "erase" ||
       this.currentInput.activeTool === "symbol" ||
@@ -1007,6 +1048,68 @@ export class WorldCanvasEngine {
     this.worldGraphics.moveTo(width, 0);
     this.worldGraphics.lineTo(width, height);
     this.worldGraphics.stroke({ color: seamColor, width: 1, alpha: 0.8 });
+  }
+
+  private buildTerrainRenderCacheKey(input: CanvasRenderInput): string {
+    const terrain = input.map.terrain;
+    const display = terrain.display;
+    const generation = terrain.generation;
+
+    return [
+      input.map.id,
+      terrain.meta.updatedAt,
+      generation.revision,
+      generation.lastGeneratedAt ?? "never",
+      display.renderMode,
+      display.showContours ? "1" : "0",
+      display.contourInterval.toFixed(4),
+      display.showDerivedCoastline ? "derived-coastline" : "no-derived-coastline",
+      display.showLandWaterOverlay ? "land-water-overlay" : "no-land-water-overlay",
+      display.verticalExaggeration.toFixed(4),
+      display.hillshadeStrength.toFixed(4),
+      terrain.seaLevel.toFixed(4),
+      terrain.storage.sampleResolution,
+      terrain.storage.chunkSize,
+    ].join("|");
+  }
+
+  private drawTerrainBase(input: CanvasRenderInput): void {
+    const terrain = input.map.terrain;
+    const hasTerrainData = Object.keys(terrain.storage.chunks).length > 0;
+
+    if (!hasTerrainData) {
+      this.terrainSprite.visible = false;
+      this.terrainTextureCacheKey = null;
+      if (this.terrainSprite.texture !== Texture.EMPTY) {
+        this.terrainSprite.texture.destroy(true);
+        this.terrainSprite.texture = Texture.EMPTY;
+      }
+      return;
+    }
+
+    const cacheKey = this.buildTerrainRenderCacheKey(input);
+
+    if (cacheKey !== this.terrainTextureCacheKey) {
+      const terrainCanvas = buildTerrainPreviewCanvas(terrain);
+      const nextTexture = Texture.from(terrainCanvas);
+
+      if (this.terrainSprite.texture !== Texture.EMPTY) {
+        this.terrainSprite.texture.destroy(true);
+      }
+
+      this.terrainSprite.texture = nextTexture;
+      this.terrainTextureCacheKey = cacheKey;
+    }
+
+    const textureWidth = Math.max(1, this.terrainSprite.texture.width);
+    const textureHeight = Math.max(1, this.terrainSprite.texture.height);
+    this.terrainSprite.visible = true;
+    this.terrainSprite.position.set(0, 0);
+    this.terrainSprite.scale.set(
+      input.map.dimensions.width / textureWidth,
+      input.map.dimensions.height / textureHeight,
+    );
+    this.terrainSprite.alpha = 0.96;
   }
 
   private drawPaintLayers(input: CanvasRenderInput, visibleChunks: Array<{ key: string; x: number; y: number }>): void {
@@ -1450,6 +1553,33 @@ export class WorldCanvasEngine {
     this.brushCursorGraphics.clear();
 
     if (!this.hoverWorldPoint) {
+      return;
+    }
+
+    if (input.activeTool === "terrain") {
+      const radius = Math.max(1, input.terrainBrush.size);
+      const operation = input.terrainBrush.tool;
+      const fillColor =
+        operation === "raise"
+          ? 0xa1df8a
+          : operation === "lower"
+            ? 0x7db8ff
+            : operation === "smooth"
+              ? 0xf9d78a
+              : 0xffc28f;
+      const strokeColor =
+        operation === "raise"
+          ? 0xd9ffca
+          : operation === "lower"
+            ? 0xd7e9ff
+            : operation === "smooth"
+              ? 0xffeab8
+              : 0xffe3c9;
+      const fillAlpha = 0.06 + clamp(input.terrainBrush.strength, 0.01, 1) * 0.14;
+
+      this.brushCursorGraphics.circle(this.hoverWorldPoint.x, this.hoverWorldPoint.y, radius);
+      this.brushCursorGraphics.fill({ color: fillColor, alpha: fillAlpha });
+      this.brushCursorGraphics.stroke({ color: strokeColor, width: 1.6 / input.view.zoom, alpha: 0.96 });
       return;
     }
 

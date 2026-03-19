@@ -1,4 +1,13 @@
 import { create } from "zustand";
+import { applyTerrainBrushAtPoint, createRandomTerrainSeed, deriveTerrainProducts, generateTerrainForMap } from "../lib/terrain";
+import {
+  clampTerrainSeaLevel,
+  createDefaultTerrainBrushSettings,
+  invalidateTerrainDerivedCache,
+  normalizeTerrainBrushSettingValue,
+  normalizeTerrainDisplaySettingValue,
+  normalizeTerrainGenerationSettingValue,
+} from "./terrainStoreUtils";
 import {
   createLabelAnnotationSkeleton,
   createLayerDocument,
@@ -37,6 +46,7 @@ import type {
   ProjectSessionMeta,
   SelectionTarget,
   SidebarPanelId,
+  TerrainGenerationSettings,
   WorldSeedProjectDocument,
 } from "../types";
 
@@ -103,6 +113,7 @@ export interface EditorStoreState {
   deleteSelection: () => void;
   duplicateSelection: () => void;
   applyBrushSample: (x: number, y: number) => void;
+  applyTerrainBrushSample: (x: number, y: number) => void;
   checkpointHistory: (label: string) => void;
   undo: () => void;
   redo: () => void;
@@ -126,6 +137,23 @@ export interface EditorStoreState {
     key: K,
     value: EditorSessionState["activeExtent"][K],
   ) => void;
+  setTerrainBrushSetting: <K extends keyof EditorSessionState["activeTerrainBrush"]>(
+    key: K,
+    value: EditorSessionState["activeTerrainBrush"][K],
+  ) => void;
+  setTerrainGenerationSetting: <K extends keyof TerrainGenerationSettings>(
+    key: K,
+    value: TerrainGenerationSettings[K],
+  ) => void;
+  setTerrainSeaLevel: (seaLevel: number) => void;
+  setTerrainDisplaySetting: <K extends keyof MapDocument["terrain"]["display"]>(
+    key: K,
+    value: MapDocument["terrain"]["display"][K],
+  ) => void;
+  generateTerrainForActiveMap: () => void;
+  regenerateTerrainForActiveMap: () => void;
+  randomizeTerrainSeed: () => void;
+  refreshTerrainDerivedForActiveMap: () => void;
 }
 
 const clamp = (value: number, min: number, max: number): number => {
@@ -357,6 +385,7 @@ const createDefaultSession = (document: WorldSeedProjectDocument): EditorSession
       value: 1,
       color: "#77b58f",
     },
+    activeTerrainBrush: createDefaultTerrainBrushSettings(),
     activeVector: {
       strokeColor: "#dbe9ff",
       strokeWidth: 2,
@@ -450,6 +479,7 @@ const VECTOR_TOOL_KINDS: Record<
 > = {
   select: null,
   pan: null,
+  terrain: null,
   coastline: { category: "coastline", geometry: "polygon" },
   river: { category: "river", geometry: "polyline" },
   border: { category: "border", geometry: "polyline" },
@@ -3154,6 +3184,42 @@ export const useEditorStore = create<EditorStoreState>((set, get) => ({
         },
       };
     }),
+  applyTerrainBrushSample: (x, y) =>
+    set((state) => {
+      if (state.session.activeTool !== "terrain") {
+        return state;
+      }
+
+      const map = state.document.maps[state.session.activeMapId];
+      const brush = state.session.activeTerrainBrush;
+      const result = applyTerrainBrushAtPoint(map.terrain, {
+        worldX: x,
+        worldY: y,
+        brush,
+      });
+
+      if (!result.changed) {
+        return state;
+      }
+
+      const nextDocument = mutateActiveMap(state, () => ({
+        ...map,
+        terrain: result.terrain,
+      }));
+
+      return {
+        document: nextDocument,
+        projectSession: {
+          ...state.projectSession,
+          dirty: true,
+          status: "needs-save",
+        },
+        session: {
+          ...state.session,
+          statusHint: `Terrain ${brush.tool} stroke (${result.affectedSamples} samples).`,
+        },
+      };
+    }),
   checkpointHistory: (label) =>
     set((state) => {
       const historyPatch = buildHistoryPatch(state, label);
@@ -3324,6 +3390,296 @@ export const useEditorStore = create<EditorStoreState>((set, get) => ({
         },
       },
     })),
+  setTerrainBrushSetting: (key, value) =>
+    set((state) => {
+      const normalizedValue = normalizeTerrainBrushSettingValue(key, value);
+
+      if (state.session.activeTerrainBrush[key] === normalizedValue) {
+        return state;
+      }
+
+      return {
+        session: {
+          ...state.session,
+          activeTerrainBrush: {
+            ...state.session.activeTerrainBrush,
+            [key]: normalizedValue,
+          },
+        },
+      };
+    }),
+  setTerrainGenerationSetting: (key, value) =>
+    set((state) => {
+      const map = state.document.maps[state.session.activeMapId];
+      const normalizedValue = normalizeTerrainGenerationSettingValue(key, value);
+      const currentValue = map.terrain.generation.settings[key];
+
+      if (currentValue === normalizedValue) {
+        return state;
+      }
+
+      const nextDocument = mutateActiveMap(state, () => ({
+        ...map,
+        terrain: {
+          ...map.terrain,
+          generation: {
+            ...map.terrain.generation,
+            settings: {
+              ...map.terrain.generation.settings,
+              [key]: normalizedValue,
+            },
+          },
+          meta: {
+            ...map.terrain.meta,
+            updatedAt: nowIso(),
+          },
+        },
+      }));
+
+      return {
+        document: nextDocument,
+        projectSession: {
+          ...state.projectSession,
+          dirty: true,
+          status: "needs-save",
+        },
+      };
+    }),
+  setTerrainSeaLevel: (seaLevel) =>
+    set((state) => {
+      const map = state.document.maps[state.session.activeMapId];
+      const normalizedSeaLevel = clampTerrainSeaLevel(seaLevel);
+
+      if (map.terrain.seaLevel === normalizedSeaLevel) {
+        return state;
+      }
+
+      const nextDocument = mutateActiveMap(state, () => ({
+        ...map,
+        terrain: {
+          ...map.terrain,
+          seaLevel: normalizedSeaLevel,
+          derived: invalidateTerrainDerivedCache(map.terrain.derived),
+          meta: {
+            ...map.terrain.meta,
+            updatedAt: nowIso(),
+          },
+        },
+      }));
+
+      return {
+        document: nextDocument,
+        projectSession: {
+          ...state.projectSession,
+          dirty: true,
+          status: "needs-save",
+        },
+        session: {
+          ...state.session,
+          statusHint: "Updated terrain sea level.",
+        },
+      };
+    }),
+  setTerrainDisplaySetting: (key, value) =>
+    set((state) => {
+      const map = state.document.maps[state.session.activeMapId];
+      const normalizedValue = normalizeTerrainDisplaySettingValue(key, value);
+      const currentValue = map.terrain.display[key];
+
+      if (currentValue === normalizedValue) {
+        return state;
+      }
+
+      const nextDocument = mutateActiveMap(state, () => ({
+        ...map,
+        terrain: {
+          ...map.terrain,
+          display: {
+            ...map.terrain.display,
+            [key]: normalizedValue,
+          },
+          derived:
+            key === "contourInterval" || key === "showContours"
+              ? {
+                  ...map.terrain.derived,
+                  contourRevision: null,
+                  cachedAt: null,
+                  contourSegmentCount: 0,
+                }
+              : map.terrain.derived,
+          meta: {
+            ...map.terrain.meta,
+            updatedAt: nowIso(),
+          },
+        },
+      }));
+
+      return {
+        document: nextDocument,
+        projectSession: {
+          ...state.projectSession,
+          dirty: true,
+          status: "needs-save",
+        },
+        session: {
+          ...state.session,
+          statusHint: `Updated terrain display ${String(key)}.`,
+        },
+      };
+    }),
+  generateTerrainForActiveMap: () =>
+    set((state) => {
+      const map = state.document.maps[state.session.activeMapId];
+      const randomSeed = createRandomTerrainSeed();
+      const generatedTerrain = generateTerrainForMap(
+        {
+          ...map,
+          terrain: {
+            ...map.terrain,
+            generation: {
+              ...map.terrain.generation,
+              settings: {
+                ...map.terrain.generation.settings,
+                seed: randomSeed,
+              },
+            },
+          },
+        },
+        { seedOverride: randomSeed },
+      );
+      const nextDocument = mutateActiveMap(state, () => ({
+        ...map,
+        terrain: generatedTerrain,
+      }));
+      const historyPatch = buildHistoryPatch(state, "Generate terrain");
+
+      return {
+        document: nextDocument,
+        undoDocuments: historyPatch.undoDocuments,
+        redoDocuments: historyPatch.redoDocuments,
+        projectSession: {
+          ...state.projectSession,
+          dirty: true,
+          status: "needs-save",
+        },
+        session: {
+          ...state.session,
+          undoStack: historyPatch.undoStack,
+          redoStack: historyPatch.redoStack,
+          statusHint: `Generated terrain with seed ${randomSeed}.`,
+        },
+      };
+    }),
+  regenerateTerrainForActiveMap: () =>
+    set((state) => {
+      const map = state.document.maps[state.session.activeMapId];
+      const generatedTerrain = generateTerrainForMap(map);
+      const nextDocument = mutateActiveMap(state, () => ({
+        ...map,
+        terrain: generatedTerrain,
+      }));
+      const historyPatch = buildHistoryPatch(state, "Regenerate terrain");
+
+      return {
+        document: nextDocument,
+        undoDocuments: historyPatch.undoDocuments,
+        redoDocuments: historyPatch.redoDocuments,
+        projectSession: {
+          ...state.projectSession,
+          dirty: true,
+          status: "needs-save",
+        },
+        session: {
+          ...state.session,
+          undoStack: historyPatch.undoStack,
+          redoStack: historyPatch.redoStack,
+          statusHint: `Regenerated terrain from seed ${generatedTerrain.generation.settings.seed}.`,
+        },
+      };
+    }),
+  randomizeTerrainSeed: () =>
+    set((state) => {
+      const map = state.document.maps[state.session.activeMapId];
+      const nextSeed = createRandomTerrainSeed();
+      const nextDocument = mutateActiveMap(state, () => ({
+        ...map,
+        terrain: {
+          ...map.terrain,
+          generation: {
+            ...map.terrain.generation,
+            settings: {
+              ...map.terrain.generation.settings,
+              seed: nextSeed,
+            },
+          },
+          meta: {
+            ...map.terrain.meta,
+            updatedAt: nowIso(),
+          },
+        },
+      }));
+
+      return {
+        document: nextDocument,
+        projectSession: {
+          ...state.projectSession,
+          dirty: true,
+          status: "needs-save",
+        },
+        session: {
+          ...state.session,
+          statusHint: `Terrain seed randomized to ${nextSeed}.`,
+        },
+      };
+    }),
+  refreshTerrainDerivedForActiveMap: () =>
+    set((state) => {
+      const map = state.document.maps[state.session.activeMapId];
+      const includeContours =
+        map.terrain.display.showContours || map.terrain.display.renderMode === "contour-preview";
+      const derivedProducts = deriveTerrainProducts(map.terrain, {
+        includeContours,
+        contourInterval: map.terrain.display.contourInterval,
+      });
+      const terrainRevision = map.terrain.generation.revision;
+      const refreshedAt = nowIso();
+
+      const nextDocument = mutateActiveMap(state, () => ({
+        ...map,
+        terrain: {
+          ...map.terrain,
+          derived: {
+            ...map.terrain.derived,
+            coastlineRevision: terrainRevision,
+            landMaskRevision: terrainRevision,
+            contourRevision: includeContours ? terrainRevision : null,
+            cachedAt: refreshedAt,
+            lastSeaLevel: map.terrain.seaLevel,
+            coastlineSegmentCount: derivedProducts.coastlineSegments.length,
+            contourSegmentCount: derivedProducts.contourSegments.length,
+            landSampleCount: derivedProducts.landSampleCount,
+            waterSampleCount: derivedProducts.waterSampleCount,
+          },
+          meta: {
+            ...map.terrain.meta,
+            updatedAt: refreshedAt,
+          },
+        },
+      }));
+
+      return {
+        document: nextDocument,
+        projectSession: {
+          ...state.projectSession,
+          dirty: true,
+          status: "needs-save",
+        },
+        session: {
+          ...state.session,
+          statusHint: `Derived terrain refreshed (${derivedProducts.coastlineSegments.length} coastline segments).`,
+        },
+      };
+    }),
 }));
 
 export const selectActiveMap = (state: EditorStoreState) => {

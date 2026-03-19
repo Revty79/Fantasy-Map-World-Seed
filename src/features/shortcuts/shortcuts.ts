@@ -9,6 +9,7 @@ export interface ShortcutEntry {
 export const TOOL_SHORTCUTS: Record<EditorToolId, string | null> = {
   select: "V",
   pan: "H",
+  terrain: "Q",
   coastline: "C",
   river: "R",
   border: "B",
@@ -23,6 +24,7 @@ export const TOOL_SHORTCUTS: Record<EditorToolId, string | null> = {
 export const TOOL_SHORTCUT_KEY_TO_TOOL: Record<string, EditorToolId> = {
   v: "select",
   h: "pan",
+  q: "terrain",
   c: "coastline",
   r: "river",
   b: "border",
@@ -37,6 +39,7 @@ export const TOOL_SHORTCUT_KEY_TO_TOOL: Record<string, EditorToolId> = {
 export const SHORTCUT_REFERENCE: ShortcutEntry[] = [
   { combo: "V", description: "Select tool", category: "Tools" },
   { combo: "H", description: "Pan tool", category: "Tools" },
+  { combo: "Q", description: "Terrain sculpt tool", category: "Tools" },
   { combo: "C", description: "Coastline tool", category: "Tools" },
   { combo: "R", description: "River tool", category: "Tools" },
   { combo: "B", description: "Border tool", category: "Tools" },

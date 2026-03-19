@@ -86,6 +86,7 @@ export interface BuildGlobeTextureInput {
   layers: MapLayerDocument[];
   maxTextureDimension?: number;
   highlightExtent?: DocumentRect | null;
+  terrainRenderModeOverride?: MapDocument["terrain"]["display"]["renderMode"] | null;
 }
 
 export interface BuildGlobeTextureResult {
@@ -95,23 +96,44 @@ export interface BuildGlobeTextureResult {
   warnings: string[];
 }
 
+const resolveGlobeTerrainSourceMap = (
+  map: MapDocument,
+  terrainRenderModeOverride: BuildGlobeTextureInput["terrainRenderModeOverride"],
+): MapDocument => {
+  if (!terrainRenderModeOverride || map.terrain.display.renderMode === terrainRenderModeOverride) {
+    return map;
+  }
+
+  return {
+    ...map,
+    terrain: {
+      ...map.terrain,
+      display: {
+        ...map.terrain.display,
+        renderMode: terrainRenderModeOverride,
+      },
+    },
+  };
+};
+
 export const buildGlobeTextureCanvas = (
   input: BuildGlobeTextureInput,
 ): BuildGlobeTextureResult => {
+  const sourceMap = resolveGlobeTerrainSourceMap(input.map, input.terrainRenderModeOverride ?? null);
   const output = computeGlobeTextureSize(
-    input.map.dimensions.width,
-    input.map.dimensions.height,
+    sourceMap.dimensions.width,
+    sourceMap.dimensions.height,
     input.maxTextureDimension ?? DEFAULT_MAX_GLOBE_TEXTURE_DIMENSION,
   );
 
   const canvas = renderMapToCanvas({
-    map: input.map,
+    map: sourceMap,
     layers: input.layers,
     sourceExtent: {
       x: 0,
       y: 0,
-      width: input.map.dimensions.width,
-      height: input.map.dimensions.height,
+      width: sourceMap.dimensions.width,
+      height: sourceMap.dimensions.height,
     },
     outputWidth: output.width,
     outputHeight: output.height,
@@ -119,7 +141,7 @@ export const buildGlobeTextureCanvas = (
   });
 
   if (input.highlightExtent) {
-    drawExtentOverlay(canvas, input.map, input.highlightExtent);
+    drawExtentOverlay(canvas, sourceMap, input.highlightExtent);
   }
 
   return {
@@ -129,4 +151,3 @@ export const buildGlobeTextureCanvas = (
     warnings: output.warnings,
   };
 };
-

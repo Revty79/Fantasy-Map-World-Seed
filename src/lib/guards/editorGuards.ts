@@ -5,6 +5,7 @@ const SCOPE_SET = new Set<MapScope>(["world", "region", "local"]);
 const TOOL_SET = new Set<EditorToolId>([
   "select",
   "pan",
+  "terrain",
   "coastline",
   "river",
   "border",

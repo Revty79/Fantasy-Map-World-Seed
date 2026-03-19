@@ -178,6 +178,9 @@ export function GlobePreview({
         </div>
 
         <p className="globe-preview__note">{previewStatus}</p>
+        <p className="globe-preview__note">
+          Globe texture is terrain-aware and sourced from the root world map render truth.
+        </p>
         {usingFallbackWorldSource ? (
           <p className="globe-preview__note">
             Globe mode always uses the root world map. The active {activeMapScope} map is shown as context only.

@@ -50,6 +50,20 @@ The document model is file-serializable and separate from runtime UI state.
   - nested-map relationship links
 - Layer documents are typed (`vector`, `paint`, `mask`, `symbol`, `label`, `dataOverlay`, plus structural kinds).
 
+### Terrain foundation (Phase 01A)
+
+Each map now contains first-class terrain truth (`map.terrain`) with:
+- chunked normalized height storage
+- seeded generator settings and revision metadata
+- terrain display configuration (render mode, contour controls, derived overlay toggles)
+- derived-cache metadata for coastline/land-water/contour summaries
+
+Terrain-driven products are generated from elevation + sea level through `src/lib/terrain/*`:
+- `generator.ts` for deterministic seeded generation
+- `editing.ts` for direct sculpt mutation
+- `derived.ts` for non-destructive derived products (land/water interpretation and coastline extraction)
+- `previewRaster.ts` for terrain-aware raster truth reused by canvas/export/globe pipelines
+
 ## Nested Map Model
 
 - Child maps are created from parent extents.
@@ -84,9 +98,9 @@ Key files:
 Current behavior:
 - Exports active map context with Tauri save dialogs.
 - Formats:
-  - PNG: rasterized authored content, no editor overlays
-  - SVG: vector/symbol/label-focused output with unsupported-layer warnings
-  - JSON: outward-facing map data package with metadata
+  - PNG: terrain-aware raster output plus authored overlays
+  - SVG: vector/symbol/label-focused output with explicit unsupported warnings, including terrain omissions
+  - JSON: outward-facing map data package including terrain document payload + summaries
 
 ## Globe Preview Relationship
 
@@ -97,6 +111,7 @@ Key files:
 
 Behavior:
 - Globe preview always uses the root world map as texture source.
+- Globe texture generation now flows through terrain-aware raster render truth.
 - Region/local active map context is preserved in UI context and optional extent highlighting.
 - Preview is intentionally read-only in Phase 1.
 
@@ -107,3 +122,4 @@ Behavior:
 - Reuse the same authored-data render truth between canvas, export, and globe pipelines.
 - Extend typed layers/entities instead of adding untyped ad-hoc payloads.
 - Favor targeted store actions plus history checkpoints over side-effect-heavy component logic.
+- Keep domain-specific store utilities split by concern (`terrainStoreUtils.ts`, persistence helpers, export helpers) as store complexity grows.

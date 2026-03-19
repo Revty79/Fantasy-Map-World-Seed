@@ -1,5 +1,6 @@
 import { PROJECT_SCHEMA_VERSION } from "../constants/documentDefaults";
 import { createProjectManifest } from "../factories/projectFactories";
+import { hydrateMapTerrainDocument } from "../factories/terrainFactories";
 import { nowIso } from "../factories/idFactory";
 import { isProjectManifest } from "../guards/projectGuards";
 import { isLayerPaintCompatible } from "../guards/layerGuards";
@@ -88,10 +89,19 @@ const toPersistedMapFile = (
   chunks: SaveProjectBundleRequest["maps"][number]["chunks"];
 } => {
   const savedAt = nowIso();
+  const hydratedMap = {
+    ...structuredClone(map),
+    terrain: hydrateMapTerrainDocument({
+      terrain: map.terrain,
+      dimensions: map.dimensions,
+      fallbackChunkSize: map.settings.chunkSize,
+      timestamp: savedAt,
+    }),
+  };
   const nextLayers: Record<LayerId, MapLayerDocument> = {};
   const chunks: SaveProjectBundleRequest["maps"][number]["chunks"] = [];
 
-  for (const [layerId, layer] of Object.entries(map.layers)) {
+  for (const [layerId, layer] of Object.entries(hydratedMap.layers)) {
     if (!isLayerPaintCompatible(layer)) {
       nextLayers[layerId as LayerId] = structuredClone(layer);
       continue;
@@ -100,7 +110,7 @@ const toPersistedMapFile = (
     const chunkRefs: Record<string, string> = {};
     for (const [chunkKey, chunk] of Object.entries(layer.chunks)) {
       const relativeChunkPath = normalizeRelativePath(
-        `maps/${map.id}/paint/${layer.id}/${chunkKeyToFileName(chunkKey)}.json`,
+        `maps/${hydratedMap.id}/paint/${layer.id}/${chunkKeyToFileName(chunkKey)}.json`,
       );
       chunkRefs[chunkKey] = relativeChunkPath;
       chunks.push({
@@ -111,7 +121,7 @@ const toPersistedMapFile = (
           kind: PAINT_CHUNK_KIND,
           schemaVersion: PROJECT_SCHEMA_VERSION,
           projectId,
-          mapId: map.id,
+          mapId: hydratedMap.id,
           layerId: layer.id,
           chunkKey,
           chunk: structuredClone(chunk),
@@ -132,10 +142,10 @@ const toPersistedMapFile = (
       kind: MAP_DOCUMENT_KIND,
       schemaVersion: PROJECT_SCHEMA_VERSION,
       projectId,
-      mapId: map.id,
+      mapId: hydratedMap.id,
       savedAt,
       map: {
-        ...structuredClone(map),
+        ...hydratedMap,
         layers: nextLayers,
       },
     },
@@ -223,6 +233,12 @@ export const hydrateProjectDocumentFromBundle = (
 
     validateMapFile(mapEntry.mapFile, registryEntry.mapId);
     const map = structuredClone(mapEntry.mapFile.map);
+    const terrain = hydrateMapTerrainDocument({
+      terrain: map.terrain,
+      dimensions: map.dimensions,
+      fallbackChunkSize: map.settings.chunkSize,
+      timestamp: map.meta.updatedAt,
+    });
     const chunksByPath = new Map(
       mapEntry.chunks.map((chunkEntry) => [normalizeRelativePath(chunkEntry.relativeChunkPath), chunkEntry]),
     );
@@ -268,6 +284,7 @@ export const hydrateProjectDocumentFromBundle = (
 
     maps[registryEntry.mapId] = {
       ...map,
+      terrain,
       layers: nextLayers,
     };
     mapOrder.push(registryEntry.mapId);

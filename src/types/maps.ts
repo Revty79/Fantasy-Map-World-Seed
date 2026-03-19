@@ -1,5 +1,6 @@
 import type { DocumentEntityMeta, DocumentId, DocumentRect, NormalizedRect } from "./common";
 import type { LayerId, MapLayerDocument } from "./layers";
+import type { MapTerrainDocument } from "./terrain";
 
 export type MapId = DocumentId;
 
@@ -51,6 +52,7 @@ export interface MapDocument {
   layerOrder: LayerId[];
   layers: Record<LayerId, MapLayerDocument>;
   nestedLinks: Record<DocumentId, NestedMapLink>;
+  terrain: MapTerrainDocument;
   settings: MapDocumentSettings;
   meta: DocumentEntityMeta;
 }
