@@ -1,11 +1,19 @@
 # Phase 2 Handoff Summary
 
-Phase 1 closes as a runnable, documented, and persistence-backed core world drafting milestone.
+Phase 01 closes as a runnable, documented, and persistence-backed core world drafting milestone.
+
+## Sequencing Update (Phase 01A First)
+
+Before active Phase 2 implementation, complete the Phase 01A terrain foundation repair queue:
+
+- `Prompts/phase_01a_terrain_foundation_repair/STATUS.md`
+
+Phase 01A is an additive retrofit that introduces terrain/elevation source-of-truth behavior while preserving the Phase 01 drafting baseline.
 
 ## Recommended Phase 2 Focus Areas
 
 1. Terrain and elevation authoring
-- Add robust elevation layers and tools (heightfield editing, slope/contour support, derived shading).
+- After Phase 01A, expand from foundational terrain support into robust elevation tooling (heightfield editing, slope/contour support, derived shading).
 - Keep typed layer contracts and export compatibility aligned with new terrain data.
 
 2. Advanced paint and style workflows
@@ -49,7 +57,8 @@ Phase 1 closes as a runnable, documented, and persistence-backed core world draf
 
 ## Practical First Steps For The Next Queue
 
-1. Add automated smoke tests for save/open/export happy paths.
-2. Break store logic into domain modules (maps, layers, labels, symbols, persistence commands).
-3. Implement terrain/elevation layer behavior with explicit serialization contracts.
-4. Replace label quick-edit prompt with inline editor overlay.
+1. Finish Phase 01A terrain foundation repair and confirm non-regression guarantees.
+2. Add automated smoke tests for save/open/export happy paths.
+3. Break store logic into domain modules (maps, layers, labels, symbols, persistence commands).
+4. Extend foundational terrain/elevation behavior into advanced phase 2 tooling.
+5. Replace label quick-edit prompt with inline editor overlay.

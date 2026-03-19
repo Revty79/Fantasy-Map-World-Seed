@@ -48,7 +48,7 @@ Phase 01A is complete when:
 - current drafting tools still function on top of the new foundation
 
 ## Queue
-- [ ] 00_phase1a_baseline_lock_and_repair_contract.md
+- [x] 00_phase1a_baseline_lock_and_repair_contract.md
 - [ ] 01_terrain_data_schema_and_document_integration.md
 - [ ] 02_seeded_fractal_generation_engine.md
 - [ ] 03_flat_terrain_render_modes_and_ui.md
@@ -63,10 +63,10 @@ Phase 01A is complete when:
 ## Run Log
 
 ### 00_phase1a_baseline_lock_and_repair_contract.md
-- Status:
-- Summary:
-- Files Changed:
-- Notes / Follow-ups:
+- Status: Complete (2026-03-19)
+- Summary: Locked the queue baseline by checking and aligning architecture/handoff wording so Phase 01 remains a preserved drafting baseline and Phase 01A is the required additive terrain retrofit path.
+- Files Changed: `docs/ARCHITECTURE.md`, `docs/PHASE2_HANDOFF.md`, `Prompts/phase_01a_terrain_foundation_repair/STATUS.md`
+- Notes / Follow-ups: Prompt 01 should implement terrain schema integration against the new non-regression and terrain-first contract language.
 
 ### 01_terrain_data_schema_and_document_integration.md
 - Status:

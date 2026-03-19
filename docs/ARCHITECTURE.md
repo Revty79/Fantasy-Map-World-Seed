@@ -1,6 +1,13 @@
-# World Seed Mapper Architecture (Phase 1)
+# World Seed Mapper Architecture (Phase 01 Baseline + Phase 01A Retrofit)
 
-This document summarizes the current project shape at the end of Phase 1.
+This document summarizes the current project shape at the end of Phase 01 and the architectural guardrails used during Phase 01A terrain foundation repair.
+
+## Phase 01A Architectural Contract
+
+- Treat Phase 01 as a successful drafting baseline, not failed work.
+- Retrofit terrain as first-class document data; do not fake terrain through paint colors or vector-only coastlines.
+- Preserve stable workflows (project lifecycle, typed layers, nested maps, export, read-only globe preview).
+- Reuse shared render truth across canvas, export, and globe pipelines as terrain support is added.
 
 ## System Boundaries
 
@@ -93,8 +100,9 @@ Behavior:
 - Region/local active map context is preserved in UI context and optional extent highlighting.
 - Preview is intentionally read-only in Phase 1.
 
-## Extension Guidance For Phase 2
+## Extension Guidance For Phase 01A And Later
 
+- Preserve the current editor/store/persistence boundaries while adding terrain capabilities.
 - Keep document model and runtime state separation intact.
 - Reuse the same authored-data render truth between canvas, export, and globe pipelines.
 - Extend typed layers/entities instead of adding untyped ad-hoc payloads.
