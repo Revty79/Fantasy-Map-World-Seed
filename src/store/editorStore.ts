@@ -42,6 +42,7 @@ import type {
   MapId,
   MapLayerDocument,
   MapScope,
+  MapTerrainDocument,
   NestedMapLink,
   ProjectSessionMeta,
   SelectionTarget,
@@ -160,6 +161,51 @@ const clamp = (value: number, min: number, max: number): number => {
   return Math.max(min, Math.min(max, value));
 };
 
+const wrapValue = (value: number, size: number): number => {
+  if (size <= 0) {
+    return 0;
+  }
+
+  const wrapped = value % size;
+  return wrapped < 0 ? wrapped + size : wrapped;
+};
+
+const shortestWrappedDelta = (delta: number, size: number): number => {
+  if (size <= 0) {
+    return delta;
+  }
+
+  if (Math.abs(delta) <= size * 0.5) {
+    return delta;
+  }
+
+  return delta > 0 ? delta - size : delta + size;
+};
+
+const summarizeTerrainLandCoverage = (
+  terrain: MapTerrainDocument,
+): { landSamples: number; totalSamples: number; landPercent: number } => {
+  let totalSamples = 0;
+  let landSamples = 0;
+  const seaLevel = terrain.seaLevel;
+
+  for (const chunk of Object.values(terrain.storage.chunks)) {
+    for (const sample of chunk.samples) {
+      totalSamples += 1;
+      if (sample >= seaLevel) {
+        landSamples += 1;
+      }
+    }
+  }
+
+  const landPercent = totalSamples > 0 ? (landSamples / totalSamples) * 100 : 0;
+  return {
+    landSamples,
+    totalSamples,
+    landPercent,
+  };
+};
+
 const MIN_CHILD_EXTENT_SIZE = 48;
 
 const getDefaultChildScopeForMap = (scope: MapScope): Exclude<MapScope, "world"> => {
@@ -209,6 +255,15 @@ const attachLayersToMap = (map: MapDocument, layers: MapLayerDocument[]): MapDoc
 const clampToMapBounds = (x: number, y: number, map: MapDocument) => {
   return {
     x: clamp(x, 0, map.dimensions.width),
+    y: clamp(y, 0, map.dimensions.height),
+  };
+};
+
+const normalizePointForMapProjection = (x: number, y: number, map: MapDocument) => {
+  return {
+    x: map.projection.wrapsHorizontally && map.dimensions.width > 1
+      ? wrapValue(x, map.dimensions.width)
+      : x,
     y: clamp(y, 0, map.dimensions.height),
   };
 };
@@ -1807,7 +1862,7 @@ export const useEditorStore = create<EditorStoreState>((set, get) => ({
         };
       }
 
-      const point = { x, y };
+      const point = normalizePointForMapProjection(x, y, map);
       const shouldStartNew =
         !state.session.inProgressDraw ||
         state.session.inProgressDraw.layerId !== selectedLayerId ||
@@ -2010,12 +2065,13 @@ export const useEditorStore = create<EditorStoreState>((set, get) => ({
         return state;
       }
 
+      const normalizedPoint = normalizePointForMapProjection(x, y, map);
       const nextPoints = feature.points.map((point, index) => {
         if (index !== vertexIndex) {
           return point;
         }
 
-        return { x, y };
+        return normalizedPoint;
       });
 
       const nextDocument = mutateActiveMap(state, () => ({
@@ -2063,8 +2119,12 @@ export const useEditorStore = create<EditorStoreState>((set, get) => ({
         return state;
       }
 
+      const wrapsHorizontally = map.projection.wrapsHorizontally && map.dimensions.width > 1;
+      const worldWidth = Math.max(1, map.dimensions.width);
       const nextPoints = feature.points.map((point) => ({
-        x: point.x + deltaX,
+        x: wrapsHorizontally
+          ? wrapValue(point.x + deltaX, worldWidth)
+          : point.x + deltaX,
         y: point.y + deltaY,
       }));
 
@@ -2136,10 +2196,11 @@ export const useEditorStore = create<EditorStoreState>((set, get) => ({
         (asset) => asset.kind === "symbol" && asset.key === state.session.activeSymbol.symbolKey,
       );
 
+      const placementPoint = normalizePointForMapProjection(x, y, map);
       const symbol = createSymbolInstanceSkeleton(
         state.session.activeSymbol.symbolKey,
         state.session.activeSymbol.category,
-        { x, y },
+        placementPoint,
         symbolAsset?.id ?? null,
       );
       symbol.scale = state.session.activeSymbol.scale;
@@ -2230,7 +2291,8 @@ export const useEditorStore = create<EditorStoreState>((set, get) => ({
       const baseCategory = isLabelCategory(activeLabel.category) ? activeLabel.category : "annotation";
       const text = activeLabel.defaultText.trim().length > 0 ? activeLabel.defaultText.trim() : "New label";
       const alignment = toLabelAlignment(activeLabel.alignment, "center");
-      const label = createLabelAnnotationSkeleton(text, baseCategory, { x, y });
+      const placementPoint = normalizePointForMapProjection(x, y, map);
+      const label = createLabelAnnotationSkeleton(text, baseCategory, placementPoint);
       const labelId = label.id;
 
       label.rotationDegrees = Number.isFinite(activeLabel.rotationDegrees) ? activeLabel.rotationDegrees : 0;
@@ -2341,6 +2403,7 @@ export const useEditorStore = create<EditorStoreState>((set, get) => ({
         return state;
       }
 
+      const nextPosition = normalizePointForMapProjection(x, y, map);
       const nextDocument = mutateActiveMap(state, () => ({
         ...map,
         layers: {
@@ -2351,7 +2414,7 @@ export const useEditorStore = create<EditorStoreState>((set, get) => ({
               ...layer.symbols,
               [symbolId]: {
                 ...symbol,
-                position: { x, y },
+                position: nextPosition,
                 meta: {
                   ...symbol.meta,
                   updatedAt: new Date().toISOString(),
@@ -2386,6 +2449,7 @@ export const useEditorStore = create<EditorStoreState>((set, get) => ({
         return state;
       }
 
+      const nextPosition = normalizePointForMapProjection(x, y, map);
       const nextDocument = mutateActiveMap(state, () => ({
         ...map,
         layers: {
@@ -2396,7 +2460,7 @@ export const useEditorStore = create<EditorStoreState>((set, get) => ({
               ...layer.labels,
               [labelId]: {
                 ...label,
-                position: { x, y },
+                position: nextPosition,
                 meta: {
                   ...label.meta,
                   updatedAt: new Date().toISOString(),
@@ -3091,24 +3155,49 @@ export const useEditorStore = create<EditorStoreState>((set, get) => ({
       const isErase = state.session.activeTool === "erase";
       const brush = state.session.activeBrush;
       const radius = Math.max(1, brush.size);
+      const worldWidth = Math.max(1, map.dimensions.width);
+      const worldHeight = Math.max(1, map.dimensions.height);
+      const wrapsHorizontally = map.projection.wrapsHorizontally && worldWidth > 1;
+      const brushX = wrapsHorizontally ? wrapValue(x, worldWidth) : x;
+      const brushY = clamp(y, 0, worldHeight);
       const cellSize = Math.max(1, layer.cellSize);
       const chunkSize = Math.max(cellSize, layer.chunkSize);
       const cellsPerChunk = Math.max(1, Math.round(chunkSize / cellSize));
+      const mapCellWidth = Math.max(1, Math.ceil(worldWidth / cellSize));
+      const mapCellHeight = Math.max(1, Math.ceil(worldHeight / cellSize));
 
-      const minCellX = Math.floor((x - radius) / cellSize);
-      const maxCellX = Math.floor((x + radius) / cellSize);
-      const minCellY = Math.floor((y - radius) / cellSize);
-      const maxCellY = Math.floor((y + radius) / cellSize);
+      const minCellX = Math.floor((brushX - radius) / cellSize);
+      const maxCellX = Math.floor((brushX + radius) / cellSize);
+      const minCellY = clamp(Math.floor((brushY - radius) / cellSize), 0, mapCellHeight - 1);
+      const maxCellY = clamp(Math.floor((brushY + radius) / cellSize), 0, mapCellHeight - 1);
 
       const nextChunks = { ...layer.chunks };
       let changed = false;
+      const visitedCells = new Set<string>();
 
       for (let globalCellY = minCellY; globalCellY <= maxCellY; globalCellY += 1) {
-        for (let globalCellX = minCellX; globalCellX <= maxCellX; globalCellX += 1) {
+        for (let sampledCellX = minCellX; sampledCellX <= maxCellX; sampledCellX += 1) {
+          const globalCellX = wrapsHorizontally
+            ? wrapValue(sampledCellX, mapCellWidth)
+            : sampledCellX;
+
+          if (!wrapsHorizontally && (globalCellX < 0 || globalCellX >= mapCellWidth)) {
+            continue;
+          }
+
+          const visitedCellKey = `${globalCellX}:${globalCellY}`;
+          if (visitedCells.has(visitedCellKey)) {
+            continue;
+          }
+          visitedCells.add(visitedCellKey);
+
           const centerX = globalCellX * cellSize + cellSize / 2;
           const centerY = globalCellY * cellSize + cellSize / 2;
-          const dx = centerX - x;
-          const dy = centerY - y;
+          const rawDeltaX = centerX - brushX;
+          const dx = wrapsHorizontally
+            ? shortestWrappedDelta(rawDeltaX, worldWidth)
+            : rawDeltaX;
+          const dy = centerY - brushY;
 
           if (dx * dx + dy * dy > radius * radius) {
             continue;
@@ -3192,10 +3281,16 @@ export const useEditorStore = create<EditorStoreState>((set, get) => ({
 
       const map = state.document.maps[state.session.activeMapId];
       const brush = state.session.activeTerrainBrush;
+      const wrapHorizontally = map.projection.wrapsHorizontally && map.dimensions.width > 1;
+      const worldX = wrapHorizontally
+        ? wrapValue(x, map.dimensions.width)
+        : x;
+      const worldY = clamp(y, 0, Math.max(1, map.dimensions.height));
       const result = applyTerrainBrushAtPoint(map.terrain, {
-        worldX: x,
-        worldY: y,
+        worldX,
+        worldY,
         brush,
+        wrapHorizontally,
       });
 
       if (!result.changed) {
@@ -3552,6 +3647,7 @@ export const useEditorStore = create<EditorStoreState>((set, get) => ({
         terrain: generatedTerrain,
       }));
       const historyPatch = buildHistoryPatch(state, "Generate terrain");
+      const coverage = summarizeTerrainLandCoverage(generatedTerrain);
 
       return {
         document: nextDocument,
@@ -3566,7 +3662,9 @@ export const useEditorStore = create<EditorStoreState>((set, get) => ({
           ...state.session,
           undoStack: historyPatch.undoStack,
           redoStack: historyPatch.redoStack,
-          statusHint: `Generated terrain with seed ${randomSeed}.`,
+          statusHint:
+            `Generated terrain with seed ${randomSeed}. ` +
+            `Land coverage ${coverage.landPercent.toFixed(1)}% (${coverage.landSamples}/${coverage.totalSamples} samples).`,
         },
       };
     }),
@@ -3579,6 +3677,7 @@ export const useEditorStore = create<EditorStoreState>((set, get) => ({
         terrain: generatedTerrain,
       }));
       const historyPatch = buildHistoryPatch(state, "Regenerate terrain");
+      const coverage = summarizeTerrainLandCoverage(generatedTerrain);
 
       return {
         document: nextDocument,
@@ -3593,7 +3692,9 @@ export const useEditorStore = create<EditorStoreState>((set, get) => ({
           ...state.session,
           undoStack: historyPatch.undoStack,
           redoStack: historyPatch.redoStack,
-          statusHint: `Regenerated terrain from seed ${generatedTerrain.generation.settings.seed}.`,
+          statusHint:
+            `Regenerated terrain from seed ${generatedTerrain.generation.settings.seed}. ` +
+            `Land coverage ${coverage.landPercent.toFixed(1)}% (${coverage.landSamples}/${coverage.totalSamples} samples).`,
         },
       };
     }),

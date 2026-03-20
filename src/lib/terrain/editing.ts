@@ -28,6 +28,7 @@ export interface ApplyTerrainBrushOptions {
   worldX: number;
   worldY: number;
   brush: ActiveTerrainBrushSettings;
+  wrapHorizontally?: boolean;
   editedAt?: string;
 }
 
@@ -63,6 +64,36 @@ const clamp = (value: number, min: number, max: number): number => {
 
 const lerp = (from: number, to: number, t: number): number => {
   return from + (to - from) * t;
+};
+
+const wrapIndex = (value: number, size: number): number => {
+  if (size <= 0) {
+    return 0;
+  }
+
+  const wrapped = value % size;
+  return wrapped < 0 ? wrapped + size : wrapped;
+};
+
+const wrapValue = (value: number, size: number): number => {
+  if (size <= 0) {
+    return 0;
+  }
+
+  const wrapped = value % size;
+  return wrapped < 0 ? wrapped + size : wrapped;
+};
+
+const shortestWrappedDelta = (delta: number, size: number): number => {
+  if (size <= 0) {
+    return delta;
+  }
+
+  if (Math.abs(delta) <= size * 0.5) {
+    return delta;
+  }
+
+  return delta > 0 ? delta - size : delta + size;
 };
 
 const toChunkKey = (chunkX: number, chunkY: number): TerrainChunkKey => {
@@ -161,13 +192,17 @@ const sampleSmoothNeighborhood = (
   sampleX: number,
   sampleY: number,
   metrics: TerrainStorageMetrics,
+  wrapHorizontally: boolean,
 ): number => {
   let total = 0;
   let count = 0;
 
   for (let offsetY = -1; offsetY <= 1; offsetY += 1) {
     for (let offsetX = -1; offsetX <= 1; offsetX += 1) {
-      const pointer = resolvePointer(sampleX + offsetX, sampleY + offsetY, metrics);
+      const neighborSampleX = wrapHorizontally
+        ? wrapIndex(sampleX + offsetX, metrics.sampleWidth)
+        : sampleX + offsetX;
+      const pointer = resolvePointer(neighborSampleX, sampleY + offsetY, metrics);
       if (!pointer) {
         continue;
       }
@@ -263,6 +298,7 @@ const evaluateNextSample = (
   weight: number,
   brush: ActiveTerrainBrushSettings,
   metrics: TerrainStorageMetrics,
+  wrapHorizontally: boolean,
 ): number => {
   const blendedStrength = clamp(brush.strength * weight, 0, 1);
 
@@ -278,7 +314,13 @@ const evaluateNextSample = (
     return clamp(lerp(currentValue, brush.flattenTarget, blendedStrength), -1, 1);
   }
 
-  const neighborhoodAverage = sampleSmoothNeighborhood(terrain, sampleX, sampleY, metrics);
+  const neighborhoodAverage = sampleSmoothNeighborhood(
+    terrain,
+    sampleX,
+    sampleY,
+    metrics,
+    wrapHorizontally,
+  );
   return clamp(lerp(currentValue, neighborhoodAverage, blendedStrength), -1, 1);
 };
 
@@ -290,23 +332,20 @@ export const applyTerrainBrushAtPoint = (
   const brush = normalizeBrush(options.brush);
   const metrics = resolveStorageMetrics(terrain);
   const radius = Math.max(1, brush.size);
-  const minSampleX = clamp(
-    Math.floor((options.worldX - radius) / metrics.sampleResolution),
-    0,
-    metrics.sampleWidth - 1,
-  );
-  const maxSampleX = clamp(
-    Math.floor((options.worldX + radius) / metrics.sampleResolution),
-    0,
-    metrics.sampleWidth - 1,
-  );
+  const worldWidth = Math.max(1, terrain.width);
+  const worldHeight = Math.max(1, terrain.height);
+  const wrapHorizontally = Boolean(options.wrapHorizontally) && metrics.sampleWidth > 1 && worldWidth > 1;
+  const brushX = wrapHorizontally ? wrapValue(options.worldX, worldWidth) : options.worldX;
+  const brushY = clamp(options.worldY, 0, worldHeight);
+  const minSampleX = Math.floor((brushX - radius) / metrics.sampleResolution);
+  const maxSampleX = Math.floor((brushX + radius) / metrics.sampleResolution);
   const minSampleY = clamp(
-    Math.floor((options.worldY - radius) / metrics.sampleResolution),
+    Math.floor((brushY - radius) / metrics.sampleResolution),
     0,
     metrics.sampleHeight - 1,
   );
   const maxSampleY = clamp(
-    Math.floor((options.worldY + radius) / metrics.sampleResolution),
+    Math.floor((brushY + radius) / metrics.sampleResolution),
     0,
     metrics.sampleHeight - 1,
   );
@@ -317,7 +356,18 @@ export const applyTerrainBrushAtPoint = (
   let changedMax = Number.NEGATIVE_INFINITY;
 
   for (let sampleY = minSampleY; sampleY <= maxSampleY; sampleY += 1) {
-    for (let sampleX = minSampleX; sampleX <= maxSampleX; sampleX += 1) {
+    const visitedSampleX = wrapHorizontally ? new Set<number>() : null;
+
+    for (let sampledSampleX = minSampleX; sampledSampleX <= maxSampleX; sampledSampleX += 1) {
+      const sampleX = wrapHorizontally
+        ? wrapIndex(sampledSampleX, metrics.sampleWidth)
+        : sampledSampleX;
+
+      if (visitedSampleX && visitedSampleX.has(sampleX)) {
+        continue;
+      }
+      visitedSampleX?.add(sampleX);
+
       const pointer = resolvePointer(sampleX, sampleY, metrics);
       if (!pointer) {
         continue;
@@ -325,8 +375,11 @@ export const applyTerrainBrushAtPoint = (
 
       const centerX = sampleX * metrics.sampleResolution + metrics.sampleResolution / 2;
       const centerY = sampleY * metrics.sampleResolution + metrics.sampleResolution / 2;
-      const distanceX = centerX - options.worldX;
-      const distanceY = centerY - options.worldY;
+      const rawDeltaX = centerX - brushX;
+      const distanceX = wrapHorizontally
+        ? shortestWrappedDelta(rawDeltaX, worldWidth)
+        : rawDeltaX;
+      const distanceY = centerY - brushY;
       const distance = Math.sqrt(distanceX * distanceX + distanceY * distanceY);
 
       if (distance > radius) {
@@ -339,7 +392,16 @@ export const applyTerrainBrushAtPoint = (
       }
 
       const currentValue = readSampleAt(terrain, pointer);
-      const nextValue = evaluateNextSample(terrain, sampleX, sampleY, currentValue, weight, brush, metrics);
+      const nextValue = evaluateNextSample(
+        terrain,
+        sampleX,
+        sampleY,
+        currentValue,
+        weight,
+        brush,
+        metrics,
+        wrapHorizontally,
+      );
 
       if (Math.abs(nextValue - currentValue) <= SAMPLE_EPSILON) {
         continue;

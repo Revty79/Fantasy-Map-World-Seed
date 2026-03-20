@@ -1,14 +1,13 @@
 import {
-  AmbientLight,
   CanvasTexture,
   ClampToEdgeWrapping,
   Color,
-  DirectionalLight,
   LinearFilter,
   LinearMipmapLinearFilter,
   Mesh,
-  MeshStandardMaterial,
+  MeshBasicMaterial,
   PerspectiveCamera,
+  RepeatWrapping,
   Scene,
   SphereGeometry,
   SRGBColorSpace,
@@ -19,6 +18,30 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
 const DEFAULT_CAMERA_POSITION = new Vector3(0, 0.35, 3.15);
 
+const fitCanvasToTextureLimit = (
+  sourceCanvas: HTMLCanvasElement,
+  maxTextureSize: number,
+): HTMLCanvasElement => {
+  const safeLimit = Math.max(64, Math.floor(maxTextureSize));
+  const scale = Math.min(1, safeLimit / sourceCanvas.width, safeLimit / sourceCanvas.height);
+  if (scale >= 1) {
+    return sourceCanvas;
+  }
+
+  const resizedCanvas = document.createElement("canvas");
+  resizedCanvas.width = Math.max(1, Math.floor(sourceCanvas.width * scale));
+  resizedCanvas.height = Math.max(1, Math.floor(sourceCanvas.height * scale));
+
+  const context = resizedCanvas.getContext("2d");
+  if (!context) {
+    return sourceCanvas;
+  }
+
+  context.imageSmoothingEnabled = true;
+  context.drawImage(sourceCanvas, 0, 0, resizedCanvas.width, resizedCanvas.height);
+  return resizedCanvas;
+};
+
 export class GlobePreviewEngine {
   private readonly host: HTMLElement;
   private renderer: WebGLRenderer | null = null;
@@ -26,7 +49,7 @@ export class GlobePreviewEngine {
   private camera: PerspectiveCamera | null = null;
   private controls: OrbitControls | null = null;
   private globeGeometry: SphereGeometry | null = null;
-  private globeMaterial: MeshStandardMaterial | null = null;
+  private globeMaterial: MeshBasicMaterial | null = null;
   private globeTexture: CanvasTexture | null = null;
   private readonly cameraResetPosition = DEFAULT_CAMERA_POSITION.clone();
 
@@ -55,22 +78,9 @@ export class GlobePreviewEngine {
     camera.position.copy(this.cameraResetPosition);
     camera.lookAt(0, 0, 0);
 
-    const ambientLight = new AmbientLight("#9bb4db", 0.6);
-    scene.add(ambientLight);
-
-    const keyLight = new DirectionalLight("#ffffff", 1.15);
-    keyLight.position.set(2.2, 1.4, 3.2);
-    scene.add(keyLight);
-
-    const rimLight = new DirectionalLight("#7aa3d8", 0.28);
-    rimLight.position.set(-2.8, 0.8, -2.4);
-    scene.add(rimLight);
-
     const globeGeometry = new SphereGeometry(1, 128, 96);
-    const globeMaterial = new MeshStandardMaterial({
+    const globeMaterial = new MeshBasicMaterial({
       color: "#fefefe",
-      roughness: 0.92,
-      metalness: 0.04,
     });
     const globeMesh = new Mesh(globeGeometry, globeMaterial);
     globeMesh.rotation.y = Math.PI / 2;
@@ -103,9 +113,10 @@ export class GlobePreviewEngine {
       return;
     }
 
-    const nextTexture = new CanvasTexture(canvas);
+    const boundedCanvas = fitCanvasToTextureLimit(canvas, this.renderer.capabilities.maxTextureSize);
+    const nextTexture = new CanvasTexture(boundedCanvas);
     nextTexture.colorSpace = SRGBColorSpace;
-    nextTexture.wrapS = ClampToEdgeWrapping;
+    nextTexture.wrapS = RepeatWrapping;
     nextTexture.wrapT = ClampToEdgeWrapping;
     nextTexture.minFilter = LinearMipmapLinearFilter;
     nextTexture.magFilter = LinearFilter;

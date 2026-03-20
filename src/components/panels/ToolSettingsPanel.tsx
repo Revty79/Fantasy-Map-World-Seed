@@ -789,6 +789,10 @@ export function ToolSettingsPanel({
             />
           </label>
         </div>
+        <p className="empty-copy">
+          Continent controls drive macro world shape: higher `Continent strength` yields more/larger landmasses, while
+          lower `Continent freq` yields fewer, broader continents.
+        </p>
         <div className="field-grid">
           <label>
             Display mode

@@ -239,7 +239,7 @@ export const createMapDocument = ({
       },
     ),
     settings: {
-      backgroundColor: "#0f1829",
+      backgroundColor: "#ffffff",
       gridEnabled: true,
       guidesEnabled: true,
       chunkSize: DEFAULT_CHUNK_SIZE,

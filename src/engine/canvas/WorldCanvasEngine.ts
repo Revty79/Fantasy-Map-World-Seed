@@ -24,6 +24,27 @@ const clamp = (value: number, min: number, max: number): number => {
   return Math.max(min, Math.min(max, value));
 };
 
+const wrapValue = (value: number, size: number): number => {
+  if (size <= 0) {
+    return 0;
+  }
+
+  const wrapped = value % size;
+  return wrapped < 0 ? wrapped + size : wrapped;
+};
+
+const shortestWrappedDelta = (delta: number, size: number): number => {
+  if (size <= 0) {
+    return delta;
+  }
+
+  if (Math.abs(delta) <= size * 0.5) {
+    return delta;
+  }
+
+  return delta > 0 ? delta - size : delta + size;
+};
+
 const toHex = (cssColor: string): number => {
   const cleaned = cssColor.replace("#", "").trim();
   const normalized = cleaned.length === 3 ? cleaned.split("").map((part) => `${part}${part}`).join("") : cleaned;
@@ -134,6 +155,36 @@ export class WorldCanvasEngine {
     this.callbacks = callbacks;
   }
 
+  private normalizeViewForMap(
+    view: CanvasRenderInput["view"],
+    map: CanvasRenderInput["map"],
+  ): CanvasRenderInput["view"] {
+    if (!map.projection.wrapsHorizontally || map.dimensions.width <= 0) {
+      return view;
+    }
+
+    const wrappedCameraX = wrapValue(view.cameraX, map.dimensions.width);
+    if (wrappedCameraX === view.cameraX) {
+      return view;
+    }
+
+    return {
+      ...view,
+      cameraX: wrappedCameraX,
+    };
+  }
+
+  private normalizeWorldPoint(point: DocumentPoint, input: CanvasRenderInput): DocumentPoint {
+    if (!input.map.projection.wrapsHorizontally || input.map.dimensions.width <= 0) {
+      return point;
+    }
+
+    return {
+      ...point,
+      x: wrapValue(point.x, input.map.dimensions.width),
+    };
+  }
+
   public async init(): Promise<void> {
     if (this.app) {
       return;
@@ -200,60 +251,86 @@ export class WorldCanvasEngine {
     });
 
     this.resizeObserver.observe(this.host);
+
+    // If an update arrived before Pixi finished init, render it now.
+    if (this.currentInput) {
+      this.update(this.currentInput);
+    }
   }
 
   public update(input: CanvasRenderInput): void {
-    this.currentInput = input;
-    const visibleRect = getVisibleWorldRect(input.view);
+    const normalizedView = this.normalizeViewForMap(input.view, input.map);
+    const nextInput =
+      normalizedView === input.view
+        ? input
+        : {
+            ...input,
+            view: normalizedView,
+          };
+
+    this.currentInput = nextInput;
+
+    if (!this.app) {
+      return;
+    }
+    const visibleRect = getVisibleWorldRect(nextInput.view);
     const visibleChunks = getVisibleChunks(
       visibleRect,
-      input.map.settings.chunkSize,
-      input.map.dimensions.width,
-      input.map.dimensions.height,
+      nextInput.map.settings.chunkSize,
+      nextInput.map.dimensions.width,
+      nextInput.map.dimensions.height,
     );
 
-    this.syncLayerContainers(input.layers);
-    this.drawWorldBounds(input);
-    this.drawTerrainBase(input);
-    this.drawPaintLayers(input, visibleChunks);
-    this.drawVectorLayers(input);
-    this.drawSymbolLayers(input);
-    this.drawLabelLayers(input);
-    this.drawChildMapExtents(input);
-    this.drawGrid(input);
-    this.drawChunkOverlay(input, visibleChunks);
-    this.drawSelectionOverlay(input);
-    this.drawDraftOverlay(input);
-    this.drawBrushCursor(input);
-    this.applyView(input.view);
+    this.syncLayerContainers(nextInput.layers);
+    this.drawWorldBounds(nextInput);
+    this.drawTerrainBase(nextInput);
+    this.drawPaintLayers(nextInput, visibleChunks);
+    this.drawVectorLayers(nextInput);
+    this.drawSymbolLayers(nextInput);
+    this.drawLabelLayers(nextInput);
+    this.drawChildMapExtents(nextInput);
+    this.drawGrid(nextInput);
+    this.drawChunkOverlay(nextInput, visibleChunks);
+    this.drawSelectionOverlay(nextInput);
+    this.drawDraftOverlay(nextInput);
+    this.drawBrushCursor(nextInput);
+    this.applyView(nextInput.view);
     this.updateCursor(this.hoverWorldPoint);
 
-    this.mapLabel.text = `${input.map.name} (${input.map.scope.toUpperCase()})`;
+    this.mapLabel.text = `${nextInput.map.name} (${nextInput.map.scope.toUpperCase()})`;
     this.mapLabel.position.set(14, 14);
   }
 
   public destroy(): void {
-    if (!this.app) {
+    const app = this.app;
+    if (!app) {
       return;
     }
+    this.app = null;
 
-    this.app.stage.off("pointerdown", this.onPointerDown);
-    this.app.stage.off("pointermove", this.onPointerMove);
-    this.app.stage.off("pointerup", this.endPointer);
-    this.app.stage.off("pointerupoutside", this.endPointer);
-    this.app.stage.off("pointerleave", this.onPointerLeave);
+    app.stage.off("pointerdown", this.onPointerDown);
+    app.stage.off("pointermove", this.onPointerMove);
+    app.stage.off("pointerup", this.endPointer);
+    app.stage.off("pointerupoutside", this.endPointer);
+    app.stage.off("pointerleave", this.onPointerLeave);
 
-    this.app.canvas.removeEventListener("wheel", this.onWheel);
+    app.canvas?.removeEventListener("wheel", this.onWheel);
     window.removeEventListener("keydown", this.onKeyDown);
     window.removeEventListener("keyup", this.onKeyUp);
 
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
 
-    this.app.destroy(true, { children: true });
-    if (this.terrainSprite.texture !== Texture.EMPTY) {
-      this.terrainSprite.texture.destroy(true);
-      this.terrainSprite.texture = Texture.EMPTY;
+    const terrainTexture = this.terrainSprite.texture;
+    if (terrainTexture && terrainTexture !== Texture.EMPTY && typeof terrainTexture.destroy === "function") {
+      terrainTexture.destroy(true);
+    }
+    this.terrainSprite.texture = Texture.EMPTY;
+
+    try {
+      app.destroy(true, { children: true });
+    } catch (error) {
+      console.warn("WorldCanvasEngine destroy cleanup warning", error);
     }
     this.terrainTextureCacheKey = null;
     this.layerContainers.clear();
@@ -261,8 +338,13 @@ export class WorldCanvasEngine {
     this.paintGraphicsByLayer.clear();
     this.symbolContainersByLayer.clear();
     this.labelContainersByLayer.clear();
+    this.currentInput = null;
+    this.hoverWorldPoint = null;
+    this.pointerDown = false;
+    this.panActive = false;
+    this.paintActive = false;
+    this.terrainBrushActive = false;
     this.host.style.cursor = "";
-    this.app = null;
   }
 
   private readonly onPointerDown = (event: FederatedPointerEvent) => {
@@ -274,7 +356,10 @@ export class WorldCanvasEngine {
       return;
     }
 
-    const worldPoint = screenToWorld({ x: event.global.x, y: event.global.y }, this.currentInput.view);
+    const worldPoint = this.normalizeWorldPoint(
+      screenToWorld({ x: event.global.x, y: event.global.y }, this.currentInput.view),
+      this.currentInput,
+    );
     this.hoverWorldPoint = worldPoint;
     this.callbacks.onPointerMove(worldPoint.x, worldPoint.y);
 
@@ -364,7 +449,10 @@ export class WorldCanvasEngine {
     }
 
     const view = this.currentInput.view;
-    const worldPoint = screenToWorld({ x: event.global.x, y: event.global.y }, view);
+    const worldPoint = this.normalizeWorldPoint(
+      screenToWorld({ x: event.global.x, y: event.global.y }, view),
+      this.currentInput,
+    );
     this.hoverWorldPoint = worldPoint;
     this.updateCursor(worldPoint);
     this.callbacks.onPointerMove(worldPoint.x, worldPoint.y);
@@ -377,7 +465,10 @@ export class WorldCanvasEngine {
     }
 
     if (this.pointerDown && this.draggedFeature) {
-      const deltaX = worldPoint.x - this.draggedFeature.lastWorld.x;
+      let deltaX = worldPoint.x - this.draggedFeature.lastWorld.x;
+      if (this.currentInput.map.projection.wrapsHorizontally && this.currentInput.map.dimensions.width > 0) {
+        deltaX = shortestWrappedDelta(deltaX, this.currentInput.map.dimensions.width);
+      }
       const deltaY = worldPoint.y - this.draggedFeature.lastWorld.y;
       useEditorStore
         .getState()
@@ -435,8 +526,9 @@ export class WorldCanvasEngine {
       cameraY: this.panStartCamera.y - deltaY / view.zoom,
     };
 
-    this.applyView(nextView);
-    this.callbacks.onViewChange(nextView);
+    const normalizedView = this.normalizeViewForMap(nextView, this.currentInput.map);
+    this.applyView(normalizedView);
+    this.callbacks.onViewChange(normalizedView);
   };
 
   private readonly onPointerLeave = () => {
@@ -483,8 +575,9 @@ export class WorldCanvasEngine {
       ...cameraView,
     };
 
-    this.applyView(nextView);
-    this.callbacks.onViewChange(nextView);
+    const normalizedView = this.normalizeViewForMap(nextView, this.currentInput.map);
+    this.applyView(normalizedView);
+    this.callbacks.onViewChange(normalizedView);
   };
 
   private readonly onKeyDown = (event: KeyboardEvent) => {
@@ -1036,18 +1129,15 @@ export class WorldCanvasEngine {
   private drawWorldBounds(input: CanvasRenderInput): void {
     const width = input.map.dimensions.width;
     const height = input.map.dimensions.height;
+    const zoom = Math.max(0.05, input.view.zoom);
+    const borderWidth = clamp(2.2 / zoom, 0.9, 5.2);
+    const accentWidth = clamp(1.3 / zoom, 0.65, 3.4);
 
     this.worldGraphics.clear();
     this.worldGraphics.rect(0, 0, width, height);
-    this.worldGraphics.fill({ color: 0x1a2a45, alpha: 0.95 });
-    this.worldGraphics.stroke({ color: 0x7ea7ee, width: 2, alpha: 0.85 });
-
-    const seamColor = 0x45618e;
-    this.worldGraphics.moveTo(0, 0);
-    this.worldGraphics.lineTo(0, height);
-    this.worldGraphics.moveTo(width, 0);
-    this.worldGraphics.lineTo(width, height);
-    this.worldGraphics.stroke({ color: seamColor, width: 1, alpha: 0.8 });
+    this.worldGraphics.fill({ color: 0xffffff, alpha: 1 });
+    this.worldGraphics.stroke({ color: 0x0e1a2b, width: borderWidth, alpha: 0.86 });
+    this.worldGraphics.stroke({ color: 0x6f95d8, width: accentWidth, alpha: 0.92 });
   }
 
   private buildTerrainRenderCacheKey(input: CanvasRenderInput): string {
@@ -1080,29 +1170,32 @@ export class WorldCanvasEngine {
     if (!hasTerrainData) {
       this.terrainSprite.visible = false;
       this.terrainTextureCacheKey = null;
-      if (this.terrainSprite.texture !== Texture.EMPTY) {
-        this.terrainSprite.texture.destroy(true);
-        this.terrainSprite.texture = Texture.EMPTY;
+      const currentTexture = this.terrainSprite.texture;
+      if (currentTexture && currentTexture !== Texture.EMPTY) {
+        currentTexture.destroy(true);
       }
+      this.terrainSprite.texture = Texture.EMPTY;
       return;
     }
 
     const cacheKey = this.buildTerrainRenderCacheKey(input);
+    const currentTexture = this.terrainSprite.texture;
 
-    if (cacheKey !== this.terrainTextureCacheKey) {
+    if (cacheKey !== this.terrainTextureCacheKey || !currentTexture || currentTexture === Texture.EMPTY) {
       const terrainCanvas = buildTerrainPreviewCanvas(terrain);
       const nextTexture = Texture.from(terrainCanvas);
 
-      if (this.terrainSprite.texture !== Texture.EMPTY) {
-        this.terrainSprite.texture.destroy(true);
+      if (currentTexture && currentTexture !== Texture.EMPTY) {
+        currentTexture.destroy(true);
       }
 
       this.terrainSprite.texture = nextTexture;
       this.terrainTextureCacheKey = cacheKey;
     }
 
-    const textureWidth = Math.max(1, this.terrainSprite.texture.width);
-    const textureHeight = Math.max(1, this.terrainSprite.texture.height);
+    const activeTexture = this.terrainSprite.texture;
+    const textureWidth = Math.max(1, activeTexture?.width ?? input.map.dimensions.width);
+    const textureHeight = Math.max(1, activeTexture?.height ?? input.map.dimensions.height);
     this.terrainSprite.visible = true;
     this.terrainSprite.position.set(0, 0);
     this.terrainSprite.scale.set(
@@ -1651,8 +1744,14 @@ export class WorldCanvasEngine {
   }
 
   private applyView(view: CanvasRenderInput["view"]): void {
-    this.worldContainer.scale.set(view.zoom);
-    this.worldContainer.position.set(view.viewportWidth / 2 - view.cameraX * view.zoom, view.viewportHeight / 2 - view.cameraY * view.zoom);
+    const normalizedView =
+      this.currentInput ? this.normalizeViewForMap(view, this.currentInput.map) : view;
+
+    this.worldContainer.scale.set(normalizedView.zoom);
+    this.worldContainer.position.set(
+      normalizedView.viewportWidth / 2 - normalizedView.cameraX * normalizedView.zoom,
+      normalizedView.viewportHeight / 2 - normalizedView.cameraY * normalizedView.zoom,
+    );
     this.screenOverlayContainer.position.set(0, 0);
   }
 }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useRef } from "react";
 import { WorldCanvasEngine } from "../../../engine/canvas/WorldCanvasEngine";
 import type { CanvasRenderInput } from "../../../engine/canvas/types";
 
@@ -12,6 +12,7 @@ interface WorldCanvasProps {
 export function WorldCanvas({ input, onViewChange, onPointerMove, onVisibleChunksChange }: WorldCanvasProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const engineRef = useRef<WorldCanvasEngine | null>(null);
+  const latestInputRef = useRef(input);
 
   const latestCallbacks = useRef({
     onViewChange,
@@ -27,7 +28,9 @@ export function WorldCanvas({ input, onViewChange, onPointerMove, onVisibleChunk
     };
   }, [onViewChange, onPointerMove, onVisibleChunksChange]);
 
-  const renderInput = useMemo(() => input, [input]);
+  useEffect(() => {
+    latestInputRef.current = input;
+  }, [input]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -43,20 +46,30 @@ export function WorldCanvas({ input, onViewChange, onPointerMove, onVisibleChunk
     });
 
     engineRef.current = engine;
+    let disposed = false;
 
-    engine.init().catch((error) => {
+    engine.init().then(() => {
+      if (disposed) {
+        engine.destroy();
+        return;
+      }
+
+      engine.update(latestInputRef.current);
+    }).catch((error) => {
         console.error("Failed to initialize Pixi canvas", error);
       });
 
     return () => {
+      disposed = true;
       engine.destroy();
       engineRef.current = null;
     };
   }, []);
 
   useEffect(() => {
-    engineRef.current?.update(renderInput);
-  }, [renderInput]);
+    latestInputRef.current = input;
+    engineRef.current?.update(input);
+  }, [input]);
 
   return <div ref={hostRef} className="world-canvas-host" />;
 }

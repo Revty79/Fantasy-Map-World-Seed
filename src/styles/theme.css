@@ -21,6 +21,7 @@
 
   --topbar-height: 64px;
   --statusbar-height: 34px;
-  --tool-rail-width: 108px;
-  --sidebar-width: 328px;
+  --workspace-bottom-safe: 18px;
+  --tool-rail-width: 172px;
+  --sidebar-width: 360px;
 }

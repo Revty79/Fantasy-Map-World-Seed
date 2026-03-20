@@ -52,6 +52,7 @@ export function GlobePreview({
   const engineRef = useRef<GlobePreviewEngine | null>(null);
   const resizeCleanupRef = useRef<(() => void) | null>(null);
   const [engineError, setEngineError] = useState<string | null>(null);
+  const [fallbackTextureDataUrl, setFallbackTextureDataUrl] = useState<string | null>(null);
 
   const disposeEngine = useCallback(() => {
     if (resizeCleanupRef.current) {
@@ -124,6 +125,19 @@ export function GlobePreview({
     engineRef.current?.setTextureFromCanvas(textureCanvas);
   }, [textureCanvas]);
 
+  useEffect(() => {
+    if (!textureCanvas) {
+      setFallbackTextureDataUrl(null);
+      return;
+    }
+
+    try {
+      setFallbackTextureDataUrl(textureCanvas.toDataURL("image/png"));
+    } catch {
+      setFallbackTextureDataUrl(null);
+    }
+  }, [textureCanvas]);
+
   const handleResetView = useCallback(() => {
     engineRef.current?.resetView();
   }, []);
@@ -131,7 +145,9 @@ export function GlobePreview({
   const previewStatus = isLoading
     ? "Rendering world texture..."
     : engineError
-      ? `WebGL unavailable: ${engineError}`
+      ? fallbackTextureDataUrl
+        ? `WebGL unavailable (${engineError}). Showing a flat texture fallback.`
+        : `WebGL unavailable: ${engineError}`
       : errorMessage
         ? errorMessage
         : isStale
@@ -140,7 +156,16 @@ export function GlobePreview({
 
   return (
     <div className="globe-preview">
-      <div ref={setHostElement} className="globe-preview__host" />
+      <div ref={setHostElement} className={`globe-preview__host ${engineError ? "is-hidden" : ""}`} />
+      {engineError ? (
+        <div className="globe-preview__fallback" role="img" aria-label="Flat world texture fallback">
+          {fallbackTextureDataUrl ? (
+            <img src={fallbackTextureDataUrl} alt="Flat world texture fallback preview" />
+          ) : (
+            <p className="globe-preview__fallback-empty">Texture unavailable. Use Refresh to rebuild preview.</p>
+          )}
+        </div>
+      ) : null}
 
       <aside className="globe-preview__overlay">
         <h2>Globe Preview</h2>

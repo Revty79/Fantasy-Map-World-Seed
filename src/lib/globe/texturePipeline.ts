@@ -7,6 +7,58 @@ const clamp = (value: number, min: number, max: number): number => {
   return Math.max(min, Math.min(max, value));
 };
 
+const lerp = (from: number, to: number, t: number): number => {
+  return from + (to - from) * t;
+};
+
+const smoothStep = (value: number): number => {
+  const t = clamp(value, 0, 1);
+  return t * t * (3 - 2 * t);
+};
+
+const enforceHorizontalWrapContinuity = (canvas: HTMLCanvasElement): void => {
+  const context = canvas.getContext("2d");
+  if (!context || canvas.width <= 1 || canvas.height <= 0) {
+    return;
+  }
+
+  const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+  const { data } = imageData;
+  const seamBandWidth = clamp(Math.round(canvas.width * 0.015), 1, Math.max(1, Math.floor(canvas.width * 0.5)));
+  const seamBandDenominator = Math.max(1, seamBandWidth - 1);
+
+  for (let y = 0; y < canvas.height; y += 1) {
+    const rowOffset = y * canvas.width;
+
+    for (let offset = 0; offset < seamBandWidth; offset += 1) {
+      const leftPixelOffset = (rowOffset + offset) * 4;
+      const rightPixelOffset = (rowOffset + (canvas.width - 1 - offset)) * 4;
+      const blendWeight = 1 - smoothStep(offset / seamBandDenominator);
+
+      for (let channel = 0; channel < 4; channel += 1) {
+        const left = data[leftPixelOffset + channel] ?? 0;
+        const right = data[rightPixelOffset + channel] ?? 0;
+        const seamAverage = (left + right) * 0.5;
+        data[leftPixelOffset + channel] = Math.round(lerp(left, seamAverage, blendWeight));
+        data[rightPixelOffset + channel] = Math.round(lerp(right, seamAverage, blendWeight));
+      }
+    }
+
+    const leftEdgePixelOffset = rowOffset * 4;
+    const rightEdgePixelOffset = (rowOffset + canvas.width - 1) * 4;
+
+    for (let channel = 0; channel < 4; channel += 1) {
+      const seamValue = Math.round(
+        ((data[leftEdgePixelOffset + channel] ?? 0) + (data[rightEdgePixelOffset + channel] ?? 0)) * 0.5,
+      );
+      data[leftEdgePixelOffset + channel] = seamValue;
+      data[rightEdgePixelOffset + channel] = seamValue;
+    }
+  }
+
+  context.putImageData(imageData, 0, 0);
+};
+
 const normalizeExtent = (extent: DocumentRect, map: MapDocument): DocumentRect => {
   const x = clamp(extent.x, 0, map.dimensions.width);
   const y = clamp(extent.y, 0, map.dimensions.height);
@@ -81,6 +133,37 @@ const drawExtentOverlay = (
   context.restore();
 };
 
+const buildEmergencyTextureCanvas = (width: number, height: number): HTMLCanvasElement => {
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(width));
+  canvas.height = Math.max(1, Math.round(height));
+  const context = canvas.getContext("2d");
+  if (!context) {
+    return canvas;
+  }
+
+  context.fillStyle = "#121b2d";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+
+  const gradient = context.createLinearGradient(0, 0, canvas.width, canvas.height);
+  gradient.addColorStop(0, "#365a92");
+  gradient.addColorStop(1, "#1e365a");
+  context.globalAlpha = 0.9;
+  context.fillStyle = gradient;
+  context.fillRect(0, 0, canvas.width, canvas.height);
+
+  context.globalAlpha = 1;
+  context.strokeStyle = "rgba(229, 236, 252, 0.36)";
+  context.lineWidth = 2;
+  context.strokeRect(1, 1, Math.max(1, canvas.width - 2), Math.max(1, canvas.height - 2));
+  context.fillStyle = "#e3ecff";
+  context.font = `600 ${Math.max(14, Math.round(canvas.height * 0.035))}px "Segoe UI", sans-serif`;
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.fillText("Preview Texture Fallback", canvas.width / 2, canvas.height / 2);
+  return canvas;
+};
+
 export interface BuildGlobeTextureInput {
   map: MapDocument;
   layers: MapLayerDocument[];
@@ -126,19 +209,57 @@ export const buildGlobeTextureCanvas = (
     input.maxTextureDimension ?? DEFAULT_MAX_GLOBE_TEXTURE_DIMENSION,
   );
 
-  const canvas = renderMapToCanvas({
-    map: sourceMap,
-    layers: input.layers,
-    sourceExtent: {
-      x: 0,
-      y: 0,
-      width: sourceMap.dimensions.width,
-      height: sourceMap.dimensions.height,
-    },
-    outputWidth: output.width,
-    outputHeight: output.height,
-    transparentBackground: false,
-  });
+  const warnings = [...output.warnings];
+  const sourceExtent = {
+    x: 0,
+    y: 0,
+    width: sourceMap.dimensions.width,
+    height: sourceMap.dimensions.height,
+  };
+
+  const renderTextureFromMap = (map: MapDocument): HTMLCanvasElement =>
+    renderMapToCanvas({
+      map,
+      layers: input.layers,
+      sourceExtent,
+      outputWidth: output.width,
+      outputHeight: output.height,
+      transparentBackground: false,
+    });
+
+  let canvas: HTMLCanvasElement;
+
+  try {
+    canvas = renderTextureFromMap(sourceMap);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    warnings.push(`Terrain-aware globe texture build failed (${message}). Fallback texture was used.`);
+
+    const fallbackMap: MapDocument = {
+      ...sourceMap,
+      terrain: {
+        ...sourceMap.terrain,
+        storage: {
+          ...sourceMap.terrain.storage,
+          chunks: {},
+        },
+      },
+    };
+
+    try {
+      canvas = renderTextureFromMap(fallbackMap);
+    } catch (fallbackError) {
+      const fallbackMessage = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+      warnings.push(
+        `Fallback globe texture build also failed (${fallbackMessage}). An emergency placeholder texture was used.`,
+      );
+      canvas = buildEmergencyTextureCanvas(output.width, output.height);
+    }
+  }
+
+  if (sourceMap.projection.wrapsHorizontally) {
+    enforceHorizontalWrapContinuity(canvas);
+  }
 
   if (input.highlightExtent) {
     drawExtentOverlay(canvas, sourceMap, input.highlightExtent);
@@ -148,6 +269,6 @@ export const buildGlobeTextureCanvas = (
     canvas,
     width: output.width,
     height: output.height,
-    warnings: output.warnings,
+    warnings,
   };
 };

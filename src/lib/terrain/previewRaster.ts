@@ -12,6 +12,8 @@ interface RampStop {
   color: RgbColor;
 }
 
+const MANUAL_COVERAGE_EPSILON = 0.0001;
+
 const clamp = (value: number, min: number, max: number): number => {
   if (value < min) {
     return min;
@@ -22,6 +24,15 @@ const clamp = (value: number, min: number, max: number): number => {
   }
 
   return value;
+};
+
+const wrapIndex = (value: number, size: number): number => {
+  if (size <= 0) {
+    return 0;
+  }
+
+  const wrapped = value % size;
+  return wrapped < 0 ? wrapped + size : wrapped;
 };
 
 const lerp = (from: number, to: number, t: number): number => {
@@ -67,9 +78,44 @@ const sampleRamp = (value: number, stops: RampStop[]): RgbColor => {
 };
 
 const readGridSample = (grid: ReturnType<typeof buildTerrainSampleGrid>, x: number, y: number): number => {
-  const clampedX = clamp(Math.round(x), 0, grid.width - 1);
+  const clampedX = wrapIndex(Math.round(x), grid.width);
   const clampedY = clamp(Math.round(y), 0, grid.height - 1);
   return grid.values[clampedY * grid.width + clampedX];
+};
+
+const buildSampleCoverageMask = (terrain: MapTerrainDocument, gridWidth: number, gridHeight: number): Uint8Array => {
+  const mask = new Uint8Array(Math.max(1, gridWidth * gridHeight));
+  const chunkSize = Math.max(1, Math.round(terrain.storage.chunkSize));
+
+  for (const chunk of Object.values(terrain.storage.chunks)) {
+    const widthSamples = Math.max(1, Math.round(chunk.widthSamples));
+    const heightSamples = Math.max(1, Math.round(chunk.heightSamples));
+
+    for (let localY = 0; localY < heightSamples; localY += 1) {
+      for (let localX = 0; localX < widthSamples; localX += 1) {
+        const globalX = chunk.chunkX * chunkSize + localX;
+        const globalY = chunk.chunkY * chunkSize + localY;
+
+        if (globalX < 0 || globalY < 0 || globalX >= gridWidth || globalY >= gridHeight) {
+          continue;
+        }
+
+        const sourceIndex = localY * widthSamples + localX;
+        if (sourceIndex >= chunk.samples.length) {
+          continue;
+        }
+        const sampleValue = chunk.samples[sourceIndex];
+        if (Math.abs(sampleValue) <= MANUAL_COVERAGE_EPSILON) {
+          continue;
+        }
+
+        const targetIndex = globalY * gridWidth + globalX;
+        mask[targetIndex] = 1;
+      }
+    }
+  }
+
+  return mask;
 };
 
 const buildBaseTerrainColor = (
@@ -187,10 +233,21 @@ export const buildTerrainPreviewCanvas = (terrain: MapTerrainDocument): HTMLCanv
   const showLandWaterOverlay = terrain.display.showLandWaterOverlay && renderMode !== "land-water";
   const verticalExaggeration = clamp(terrain.display.verticalExaggeration, 0.1, 10);
   const hillshadeStrength = clamp(terrain.display.hillshadeStrength, 0, 2);
+  const transparentUntouchedSamples = terrain.generation.source === "manual-edit";
+  const coverageMask = transparentUntouchedSamples ? buildSampleCoverageMask(terrain, grid.width, grid.height) : null;
 
   for (let y = 0; y < grid.height; y += 1) {
     for (let x = 0; x < grid.width; x += 1) {
       const sampleIndex = y * grid.width + x;
+      const pixelIndex = sampleIndex * 4;
+      if (coverageMask && coverageMask[sampleIndex] === 0) {
+        imageData.data[pixelIndex] = 0;
+        imageData.data[pixelIndex + 1] = 0;
+        imageData.data[pixelIndex + 2] = 0;
+        imageData.data[pixelIndex + 3] = 0;
+        continue;
+      }
+
       const heightValue = grid.values[sampleIndex];
       let color = buildBaseTerrainColor(heightValue, seaLevel, renderMode);
 
@@ -209,7 +266,6 @@ export const buildTerrainPreviewCanvas = (terrain: MapTerrainDocument): HTMLCanv
         }
       }
 
-      const pixelIndex = sampleIndex * 4;
       imageData.data[pixelIndex] = color.r;
       imageData.data[pixelIndex + 1] = color.g;
       imageData.data[pixelIndex + 2] = color.b;

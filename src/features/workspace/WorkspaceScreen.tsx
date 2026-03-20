@@ -335,13 +335,6 @@ export function WorkspaceScreen() {
   ].join(":");
 
   const refreshGlobePreview = useCallback(async () => {
-    if (rootWorldMap.scope !== "world") {
-      const message = "Globe preview requires a valid root world map source.";
-      setGlobeError(message);
-      setStatusHint(message);
-      return;
-    }
-
     setGlobeLoading(true);
     setGlobeError(null);
 
@@ -357,6 +350,11 @@ export function WorkspaceScreen() {
       });
 
       const warnings = [...result.warnings];
+      if (rootWorldMap.scope !== "world") {
+        warnings.push(
+          "Root world map metadata is invalid; globe texture was generated from the current fallback map source.",
+        );
+      }
       if (activeMap.scope !== "world" && !activeMapWorldExtent) {
         warnings.push(
           "Current child-map extent could not be resolved for overlay; showing the world texture without highlight."
@@ -385,23 +383,12 @@ export function WorkspaceScreen() {
   }, [activeMap.scope, activeMapWorldExtent, globeContextKey, rootWorldLayers, rootWorldMap, setStatusHint]);
 
   const toggleWorkspaceMode = useCallback(() => {
-    setWorkspaceMode((previous) => {
-      const next = previous === "flat" ? "globe" : "flat";
-      setStatusHint(
-        next === "globe"
-          ? usingFallbackWorldSource
-            ? `Globe mode opened. Showing root world map: ${rootWorldMap.name}.`
-            : `Globe mode opened for ${rootWorldMap.name}.`
-          : "Returned to flat editor mode."
-      );
-      return next;
-    });
-  }, [rootWorldMap.name, setStatusHint, usingFallbackWorldSource]);
+    setWorkspaceMode((currentMode) => (currentMode === "flat" ? "globe" : "flat"));
+  }, []);
 
   const exitGlobePreview = useCallback(() => {
     setWorkspaceMode("flat");
-    setStatusHint("Returned to flat editor mode.");
-  }, [setStatusHint]);
+  }, []);
 
   useEffect(() => {
     if (lastRenderedGlobeContextRef.current && lastRenderedGlobeContextRef.current !== globeContextKey) {
@@ -413,10 +400,22 @@ export function WorkspaceScreen() {
     const previousMode = previousWorkspaceModeRef.current;
     previousWorkspaceModeRef.current = workspaceMode;
 
-    if (workspaceMode === "globe" && previousMode !== "globe") {
-      void refreshGlobePreview();
+    if (workspaceMode === previousMode) {
+      return;
     }
-  }, [refreshGlobePreview, workspaceMode]);
+
+    if (workspaceMode === "globe") {
+      setStatusHint(
+        usingFallbackWorldSource
+          ? `Globe mode opened. Showing root world map: ${rootWorldMap.name}.`
+          : `Globe mode opened for ${rootWorldMap.name}.`
+      );
+      void refreshGlobePreview();
+      return;
+    }
+
+    setStatusHint("Returned to flat editor mode.");
+  }, [refreshGlobePreview, rootWorldMap.name, setStatusHint, usingFallbackWorldSource, workspaceMode]);
 
   const currentViewDocumentWidth = Math.max(1, Math.round(activeView.viewportWidth / Math.max(0.001, activeView.zoom)));
   const currentViewDocumentHeight = Math.max(1, Math.round(activeView.viewportHeight / Math.max(0.001, activeView.zoom)));
